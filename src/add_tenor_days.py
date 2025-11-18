@@ -30,11 +30,14 @@ def add_tenor_to_file(csv_path: Path, snap_dt: datetime) -> None:
         print(f"  ⚠️ Skipped: no 'expiration' column in {csv_path.name}")
         return
 
-    # Convert expiration column to datetime
-    exp_ts = pd.to_datetime(df["expiration"], errors="coerce")
+    # Convert expiration column to timezone-aware UTC timestamps
+    exp_ts = pd.to_datetime(df["expiration"], errors="coerce", utc=True)
 
-    # Convert snap_dt to pandas Timestamp
-    snap_ts = pd.to_datetime(snap_dt)
+    # Convert snap_dt to timezone-aware UTC timestamp
+    if snap_dt.tzinfo is None:
+        snap_ts = pd.to_datetime(snap_dt).tz_localize("UTC")
+    else:
+        snap_ts = pd.to_datetime(snap_dt).tz_convert("UTC")
 
     # Calculate tenor in days; rows with invalid expiration will get NaN
     df["tenor_days"] = (exp_ts - snap_ts).dt.days
