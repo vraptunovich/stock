@@ -20,7 +20,7 @@ def load_config(path: Optional[Union[str, Path]] = None) -> dict:
     If path is not provided, config/config.yaml under the repository root is used.
     """
     if path is None:
-        cfg_path = BASE_DIR / "config" / "config.yaml"
+        cfg_path = BASE_DIR /  "config.yaml"
     else:
         cfg_path = Path(path)
 
