@@ -18,3 +18,5 @@ exp_dates: []
 outdir: "csv_out"
 
 snap_date: "2025-11-18"
+
+spot_price: 247.77
