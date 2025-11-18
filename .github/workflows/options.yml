@@ -1,0 +1,45 @@
+name: Download options and upload CSV artifacts
+
+on:
+  # Scheduled run (every day at 07:00 UTC)
+  schedule:
+    - cron: '0 7 * * *'
+
+  # Manual trigger from the GitHub Actions UI
+  workflow_dispatch:
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        if: hashFiles('requirements.txt') != ''
+        run: pip install -r requirements.txt
+
+      - name: Run options script
+        # Script is located in the src/ directory
+        run: python src/options_to_csv.py
+
+      - name: Upload CSV directory as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          # Artifact name will include the GitHub run number
+          name: options-csv-${{ github.run_number }}
+
+          # This must match "outdir" in config.yaml
+          path: csv_out/
+
+          # Fail the job if no files are found
+          if-no-files-found: error
+
+          # How many days the artifact will be kept
+          retention-days: 7

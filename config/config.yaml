@@ -1,0 +1,18 @@
+# List of stock tickers to download options for
+tickers:
+  - AAPL
+  - MSFT
+
+# Optional expiration date range (inclusive).
+# Can be "YYYY-MM-DD", "DD-MM-YYYY", or empty string "" if not used.
+exp_start: "2025-08-01"
+exp_end:   "2028-10-10"
+
+# Optional explicit expiration dates. If non-empty, this list has priority
+# over exp_start / exp_end.
+# Example: ["2025-10-17", "10-10-2025"]
+exp_dates: []
+
+# Directory (relative to repo root) where CSV files will be stored.
+# This directory will also be uploaded as an artifact in GitHub Actions.
+outdir: "csv_out"
