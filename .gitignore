@@ -1,0 +1,50 @@
+# -----------------------
+# Python bytecode / cache
+# -----------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# -----------------------
+# Virtual environments
+# -----------------------
+.venv/
+venv/
+env/
+ENV/
+
+# -----------------------
+# Python tooling caches
+# -----------------------
+.mypy_cache/
+.pytest_cache/
+.dmypy.json
+.pyre/
+
+# -----------------------
+# OS / editor files
+# -----------------------
+.DS_Store
+Thumbs.db
+
+# JetBrains IDEs (IntelliJ, PyCharm, etc.)
+.idea/
+
+# VS Code
+.vscode/
+
+# -----------------------
+# Local data / output
+# -----------------------
+# CSV output directory used by the script and uploaded as artifact
+csv_out/
+
+# Logs
+logs/
+*.log
+
+# -----------------------
+# Other common files
+# -----------------------
+*.sqlite3
+*.db

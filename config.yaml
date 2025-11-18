@@ -16,3 +16,5 @@ exp_dates: []
 # Directory (relative to repo root) where CSV files will be stored.
 # This directory will also be uploaded as an artifact in GitHub Actions.
 outdir: "csv_out"
+
+snap_date: "2025-11-18"

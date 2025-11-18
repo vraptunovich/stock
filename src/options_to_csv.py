@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
-from typing import Iterable
 from pathlib import Path
+from typing import Iterable
 
 import pandas as pd
 import yfinance as yf
-import yaml
 
+from utils import ensure_dir
+from utils import load_config
+from utils import parse_date
+from utils import to_edt
 
 # Resolve repository root assuming this file is under src/
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -23,64 +24,6 @@ YAHOO_COL_ORDER = [
     "change", "percentChange", "volume", "openInterest",
     "impliedVolatility", "inTheMoney", "contractSize", "currency"
 ]
-
-
-# ---------------------------------------------------------
-# Configuration helpers
-# ---------------------------------------------------------
-
-def load_config(path: Path | None = None) -> dict:
-    """
-    Load YAML configuration from file.
-
-    If no path is provided, `config.yaml` is read from the repository root.
-    """
-    cfg_path = path or (BASE_DIR / "config.yaml")
-    if not cfg_path.exists():
-        raise FileNotFoundError(f"Config file not found: {cfg_path}")
-    with cfg_path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
-def ensure_dir(path: Path):
-    """Create directory if it does not exist."""
-    path.mkdir(parents=True, exist_ok=True)
-
-
-# ---------------------------------------------------------
-# Utility functions
-# ---------------------------------------------------------
-
-def parse_date(s: str) -> datetime:
-    """
-    Parse a date string in either 'YYYY-MM-DD' or 'DD-MM-YYYY' format.
-    Returns datetime in UTC timezone.
-    """
-    s = s.strip()
-    for fmt in ("%Y-%m-%d", "%d-%m-%Y"):
-        try:
-            dt = datetime.strptime(s, fmt)
-            return dt.replace(tzinfo=timezone.utc)
-        except ValueError:
-            pass
-    raise ValueError(f"Cannot parse date: {s}. Use YYYY-MM-DD or DD-MM-YYYY.")
-
-
-def to_edt(dt: pd.Timestamp | None) -> str | None:
-    """
-    Convert a pandas timestamp to America/New_York timezone (EST/EDT)
-    and return it as a formatted string.
-    """
-    if pd.isna(dt):
-        return None
-    try:
-        ts = pd.to_datetime(dt, utc=True)
-    except Exception:
-        return None
-    if ts.tz is None:
-        ts = ts.tz_localize("UTC")
-    edt = ts.tz_convert(ZoneInfo("America/New_York"))
-    return edt.strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
 # ---------------------------------------------------------
@@ -119,7 +62,7 @@ def load_for_expiration(ticker: str, expiration: str) -> pd.DataFrame:
 
     frames = [
         normalize_chain(chain.calls, "call", expiration),
-        normalize_chain(chain.puts,  "put",  expiration),
+        normalize_chain(chain.puts, "put", expiration),
     ]
 
     df = pd.concat([f for f in frames if not f.empty], ignore_index=True)
@@ -196,20 +139,25 @@ def run(config: dict):
       - fetches option chains
       - applies filters
       - saves results into CSV files inside the configured output directory.
+      - each ticker has its own subdirectory under the output directory.
     """
 
-    tickers   = config.get("tickers", ["AAPL"])
+    tickers = config.get("tickers", ["AAPL"])
     exp_start = config.get("exp_start") or ""
-    exp_end   = config.get("exp_end") or ""
+    exp_end = config.get("exp_end") or ""
     exp_dates = config.get("exp_dates") or []
     outdir_name = config.get("outdir", "csv_out")
 
-    # Output directory is resolved relative to the repository root
+    # Base output directory is resolved relative to the repository root
     outdir = BASE_DIR / outdir_name
     ensure_dir(outdir)
 
     for ticker in tickers:
         print(f"\n================ {ticker} :: options ================")
+
+        # Create per-ticker subdirectory, e.g. csv_out/AAPL, csv_out/MSFT
+        ticker_dir = outdir / ticker
+        ensure_dir(ticker_dir)
 
         t = yf.Ticker(ticker)
         all_exps = t.options or []
@@ -253,7 +201,8 @@ def run(config: dict):
         else:
             out_name = f"{ticker}_options_all_expirations_filtered.csv"
 
-        out_path = outdir / out_name
+        # Save file into per-ticker directory
+        out_path = ticker_dir / out_name
         df_filtered.to_csv(out_path, index=False)
 
         print(f"Total rows (raw): {len(df_all)}, after filters: {len(df_filtered)}")
