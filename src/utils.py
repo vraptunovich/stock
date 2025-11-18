@@ -3,21 +3,26 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Union
+from typing import Union, Optional
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yaml
 
+# Repository root, assuming this file is under src/
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-def load_config(path: Union[str, Path]) -> dict:
+
+def load_config(path: Optional[Union[str, Path]] = None) -> dict:
     """
     Load YAML configuration from the given path.
 
-    :param path: Path to a YAML config file (string or Path).
-    :return: Parsed configuration as a dictionary (empty dict if file is empty).
+    If path is not provided, config/config.yaml under the repository root is used.
     """
-    cfg_path = Path(path)
+    if path is None:
+        cfg_path = BASE_DIR / "config" / "config.yaml"
+    else:
+        cfg_path = Path(path)
 
     if not cfg_path.exists():
         raise FileNotFoundError(f"Config file not found: {cfg_path}")
