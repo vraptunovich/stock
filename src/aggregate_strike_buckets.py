@@ -63,7 +63,7 @@ def aggregate_for_ticker(
       - read all CSV files under outdir/<ticker>/
       - concatenate them
       - compute max(relative_strike) per strike bucket
-      - save summary to outdir/<ticker>/strike_buckets_summary.csv
+      - save summary to outdir/<ticker>/<ticker>_strike_buckets_summary.csv
     """
     ticker_dir = outdir / ticker
     if not ticker_dir.exists():
@@ -120,6 +120,7 @@ def aggregate_for_ticker(
 
         rows.append(
             {
+                "ticker": ticker,
                 "lower_strike": lower,
                 "upper_strike": upper,
                 "max_relative_strike": max_rel,
@@ -128,9 +129,11 @@ def aggregate_for_ticker(
 
     result_df = pd.DataFrame(rows)
 
-    out_path = ticker_dir / "strike_buckets_summary.csv"
+    # File name now includes the ticker
+    out_path = ticker_dir / f"{ticker}_strike_buckets_summary.csv"
     result_df.to_csv(out_path, index=False)
     print(f"✅ Saved summary for {ticker}: {out_path}")
+
 
 
 def run(config: dict) -> None:
