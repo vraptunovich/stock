@@ -74,30 +74,28 @@ Produces summary file:
 
 csv_out/<TICKER>/<TICKER>_strike_buckets_summary.csv
 
-📂 Repository Structure
+Repository structure
 .
-├── src/
-│   ├── options_to_csv.py
-│   ├── add_tenor_days.py
-│   ├── add_relative_strike.py
-│   ├── add_max_tenor_for_strike.py
-│   ├── strike_buckets_summary.py
-│   ├── helper.py
-│
-├── config/
-│   ├── parameters.yaml
-│   ├── strike_buckets.yaml
-│
-├── csv_out/                  # auto-generated output
-│   └── <TICKER>/
-│       ├── *.csv
-│       └── <TICKER>_strike_buckets_summary.csv
-│
-├── .github/
-│   └── workflows/
-│       └── pipeline.yml
-│
-└── README.md
+
+.
+|-- src/
+|   |-- options_to_csv.py
+|   |-- add_tenor_days.py
+|   |-- add_relative_strike.py
+|   |-- add_max_tenor_for_strike.py
+|   |-- strike_buckets_summary.py
+|   |-- helper.py
+|   `-- config/
+|       |-- parameters.yaml
+|       |-- strike_buckets.yaml
+|       `-- csv_out/                # auto-generated output
+|           |-- *.csv
+|           `-- _strike_buckets_summary.csv
+|-- .github/
+|   `-- workflows/
+|       `-- pipeline.yml
+`-- README.md
+
 
 ⚙️ Configuration
 parameters.yaml
