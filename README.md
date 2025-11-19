@@ -1,27 +1,79 @@
 📈 Options Data Processing Pipeline
-<p align="center"> <img src="https://img.shields.io/badge/Python-3.11-blue?logo=python" /> <img src="https://img.shields.io/badge/Status-Automated-green?logo=githubactions" /> <img src="https://img.shields.io/badge/Data-Yahoo%20Finance-yellow?logo=yahoo" /> <img src="https://img.shields.io/badge/CI-GitHub%20Actions-black?logo=github" /> </p>
 
-This repository contains a fully automated data pipeline for downloading, processing, enriching, and aggregating options chain data from Yahoo Finance.
-The pipeline runs locally or via GitHub Actions, producing ready-to-use CSV datasets and downloadable artifacts.
+This repository contains an automated end-to-end pipeline for downloading, processing, enriching, and aggregating options chain data from Yahoo Finance.
+The pipeline runs both locally and via GitHub Actions, producing ready-to-use CSV datasets and ZIP artifacts.
 
-🏗 Pipeline Architecture (Flowchart)
-flowchart TD
+🚀 Features
+1. Download Options Chains
 
-A[Load parameters.yaml] --> B[Download option chains\n(options_to_csv.py)]
-B --> C[Add tenor_days\n(add_tenor_days.py)]
-C --> D[Add relative_strike\n(add_relative_strike.py)]
-D --> E[Add max_tenor_for_strike\n(add_max_tenor_for_strike.py)]
-E --> F[Aggregate strike buckets\n(strike_buckets_summary.py)]
-F --> G[Export ZIP artifact\nGitHub Actions]
+options_to_csv.py:
 
-✨ Features
-✔ Download clean option chains
-✔ Compute tenor (days to expiration)
-✔ Compute relative strike
-✔ MAXIFS-style aggregation per strike
-✔ Bucket-based aggregation
-✔ Fully automated CI/CD with artifacts
-✔ Modular scripts, logging, configs
+Fetches option chains from Yahoo Finance
+
+Applies expiration filters:
+
+exact dates (exp_dates)
+
+date range (exp_start → exp_end)
+
+all expirations if filters are not provided
+
+Normalizes columns into a consistent format
+
+Saves data into per-ticker directories:
+
+csv_out/<TICKER>/<file>.csv
+
+2. Add Tenor (Days to Expiration)
+
+add_tenor_days.py:
+
+Computes
+
+tenor_days = expiration_date − snap_date
+
+
+Adds a snap_date column to every row
+
+Overwrites the original CSV files
+
+3. Calculate Relative Strike
+
+add_relative_strike.py:
+
+Computes
+
+relative_strike = ABS(strike / spot_price) * 100
+
+
+Adds spot_price column
+
+Overwrites each CSV file
+
+4. Add MAXIFS-style Aggregation
+
+add_max_tenor_for_strike.py:
+
+Computes
+
+max_tenor_for_strike = MAX(tenor_days WHERE strike == current_strike)
+
+
+Equivalent to Excel:
+=MAXIFS(S:S, D:D, D2)
+
+5. Strike Bucket Aggregation
+
+strike_buckets_summary.py:
+
+Reads bucket definitions from config/strike_buckets.yaml
+
+Aggregates max(relative_strike) per bucket
+
+Produces summary file:
+
+csv_out/<TICKER>/<TICKER>_strike_buckets_summary.csv
+
 📂 Repository Structure
 .
 ├── src/
@@ -36,23 +88,19 @@ F --> G[Export ZIP artifact\nGitHub Actions]
 │   ├── parameters.yaml
 │   ├── strike_buckets.yaml
 │
-├── docs/
-│   ├── pipeline.md
-│   ├── configuration.md
-│   ├── architecture.md
-│   └── usage_examples.md
-│
-├── csv_out/
+├── csv_out/                  # auto-generated output
 │   └── <TICKER>/
 │       ├── *.csv
 │       └── <TICKER>_strike_buckets_summary.csv
 │
-├── .github/workflows/pipeline.yml
-├── README.md
-└── requirements.txt
+├── .github/
+│   └── workflows/
+│       └── pipeline.yml
+│
+└── README.md
 
 ⚙️ Configuration
-config/parameters.yaml
+parameters.yaml
 tickers:
 - AAPL
 - MSFT
@@ -66,7 +114,7 @@ exp_start: "2025-08-01"
 exp_end: "2028-10-10"
 exp_dates: []
 
-config/strike_buckets.yaml
+strike_buckets.yaml
 strike_buckets:
 - lower: 0.0
   upper: 25.0
@@ -76,26 +124,9 @@ strike_buckets:
 - lower: 175.0
   upper: 9999.0
 
-🚀 Installation
-1. Clone the repo
-   git clone <repo-url>
-   cd <repo-folder>
-
-2. Create virtual environment
-   python3 -m venv .venv
-   source .venv/bin/activate   # Linux/Mac
-   .venv\Scripts\activate      # Windows
-
-3. Install dependencies
-   pip install -r requirements.txt
-
-4. Verify installation
-   python --version
-   pip list
-
 ▶️ Running the Pipeline Locally
 
-Run full pipeline in order:
+Run all steps:
 
 python src/options_to_csv.py
 python src/add_tenor_days.py
@@ -104,15 +135,22 @@ python src/add_max_tenor_for_strike.py
 python src/strike_buckets_summary.py
 
 
-Run a single stage:
+Run a single step:
 
 python src/add_relative_strike.py
 
 🤖 GitHub Actions Automation
 
-The repository includes a workflow:
+The pipeline can run automatically:
 
-.github/workflows/pipeline.yml
+on a schedule (cron)
+
+on push to main
+
+with artifact export
+
+Example workflow (.github/workflows/pipeline.yml):
+
 on:
 schedule:
 - cron: "0 4 * * *"
@@ -148,69 +186,43 @@ runs-on: ubuntu-latest
           name: options-data
           path: csv_out/
 
-
-Artifacts appear under GitHub → Actions → Run → Artifacts.
-
 🧪 Dependencies
+
+Install using:
+
+pip install -r requirements.txt
+
+
+Required packages:
+
 pandas
+
 yfinance
+
 pyyaml
 
+zoneinfo (Python 3.9+)
 
-Recommended: Python 3.11
+Python 3.11 recommended
 
-🔍 Logging
+📜 Logging
 
-All scripts use a unified logging setup:
+All scripts use a shared logging format:
 
 %(asctime)s [%(levelname)s] %(name)s - %(message)s
 
 
-Full logs visible in GitHub Actions.
+Logs appear in GitHub Actions in real time.
 
-📦 Artifacts Structure
+📦 Artifacts
 
-Downloadable ZIP looks like:
+GitHub Actions exports:
 
 options-data.zip
 └── csv_out/
-└── AAPL/
-├── aapl_options_filtered.csv
-├── aapl_options_tenor.csv
-├── aapl_options_relative_strike.csv
-├── aapl_max_tenor_for_strike.csv
-└── AAPL_strike_buckets_summary.csv
-
-📚 Documentation (docs/ folder)
-docs/pipeline.md
-
-Detailed description of each pipeline stage.
-
-docs/configuration.md
-
-Full explanation of YAML config fields.
-
-docs/architecture.md
-
-System architecture, diagrams, data flows.
-
-docs/usage_examples.md
-
-Real examples of CSV transformations.
-
-🧬 Full Pipeline Diagram (Detailed)
-graph LR
-
-A[Start] --> B[Load configs<br>parameters.yaml<br>strike_buckets.yaml]
-B --> C[Fetch options chain<br>(yfinance)]
-C --> D[Normalize & filter<br>CSV export per ticker]
-D --> E[Compute tenor_days<br>snap_date applied]
-E --> F[Compute relative_strike<br>spot_price applied]
-F --> G[Compute max_tenor_for_strike<br>(MAXIFS)]
-G --> H[Aggregate strike buckets<br>summary CSV]
-H --> I[Upload artifact ZIP]
-I --> J[Finish]
-
-📄 License
-
-MIT (or specify another if desired).
+└── <TICKER>/
+├── *_filtered.csv
+├── *_tenor.csv
+├── *_relative.csv
+├── *_max_tenor_for_strike.csv
+└── <TICKER>_strike_buckets_summary.csv
