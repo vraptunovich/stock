@@ -3,7 +3,7 @@
 
 """
 This script:
-  - loads configuration from config/config.yaml
+  - loads configuration from config/parameters.yaml
   - iterates over all CSV files under outdir/<ticker>/
   - reads tenor_days and strike
   - computes max_tenor_for_strike = MAXIFS(tenor_days, strike == current_strike)
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from utils import load_config  # shared config loader
+from helper import load_config  # shared config loader
 
 # Repository root assuming this file is under src/
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -77,5 +77,5 @@ def run(config: dict):
 
 
 if __name__ == "__main__":
-    cfg = load_config()  # config/config.yaml
+    cfg = load_config()  # config/parameters.yaml
     run(cfg)

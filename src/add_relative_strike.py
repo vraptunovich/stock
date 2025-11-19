@@ -3,7 +3,7 @@
 
 """
 This script:
-  - loads configuration from config/config.yaml
+  - loads configuration from config/parameters.yaml
   - reads spot_price from config
   - iterates over all CSV files under outdir/<ticker>/
   - reads strike column
@@ -14,7 +14,7 @@ This script:
 from pathlib import Path
 import pandas as pd
 
-from utils import load_config
+from helper import load_config
 
 # Repository root assuming this file is under src/
 BASE_DIR = Path(__file__).resolve().parent.parent
