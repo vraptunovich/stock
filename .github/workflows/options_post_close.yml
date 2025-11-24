@@ -113,6 +113,33 @@ jobs:
             echo "Directory csv_out does not exist, nothing to save."
           fi
 
+      - name: Clean raw snapshot and keep only enriched in dated directory
+        shell: bash
+        run: |
+          set -e
+
+          DATE_PATH=$(date -u '+%Y/%m/%d')
+          SNAP_DIR="csv_out/${DATE_PATH}"
+          ENRICHED_DIR="${SNAP_DIR}/enriched"
+
+          echo "Cleaning raw snapshot in ${SNAP_DIR}, keeping only 'enriched'"
+
+          if [ ! -d "${ENRICHED_DIR}" ]; then
+            echo "Enriched directory ${ENRICHED_DIR} does not exist. Nothing to clean."
+            exit 0
+          fi
+
+          # Remove everything in SNAP_DIR except 'enriched'
+          for entry in "${SNAP_DIR}"/*; do
+            [ -e "$entry" ] || continue
+            name=$(basename "$entry")
+            if [ "$name" = "enriched" ]; then
+              continue
+            fi
+            echo "Removing raw entry from snapshot: $entry"
+            rm -rf "$entry"
+          done
+
       - name: Commit enriched snapshot
         if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
         shell: bash
@@ -123,20 +150,19 @@ jobs:
 
           DATE_PATH=$(date -u '+%Y/%m/%d')
           SNAP_DIR="csv_out/${DATE_PATH}"
-          ENRICHED_DIR="${SNAP_DIR}/enriched"
 
-          echo "Committing enriched snapshot from: ${ENRICHED_DIR}"
+          echo "Committing enriched snapshot from: ${SNAP_DIR}"
 
-          if [ ! -d "${ENRICHED_DIR}" ]; then
-            echo "Enriched directory ${ENRICHED_DIR} does not exist. Nothing to commit."
+          if [ ! -d "${SNAP_DIR}" ]; then
+            echo "Snapshot directory ${SNAP_DIR} does not exist. Nothing to commit."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Force-add enriched directory even if csv_out is in .gitignore
-          git add -f "${ENRICHED_DIR}" || echo "Nothing to add from ${ENRICHED_DIR}"
+          # Force-add entire SNAP_DIR so deletions of raw and additions in enriched are tracked
+          git add -f "${SNAP_DIR}" || echo "Nothing to add from ${SNAP_DIR}"
 
           # Commit only if there are staged changes
           if git diff --cached --quiet; then
