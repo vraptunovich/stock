@@ -33,11 +33,6 @@ Thumbs.db
 # VS Code
 .vscode/
 
-# -----------------------
-# Local data / output
-# -----------------------
-# CSV output directory used by the script and uploaded as artifact
-csv_out/
 
 # Logs
 logs/
