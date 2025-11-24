@@ -1,7 +1,7 @@
 # 📈 Options Data Processing Pipeline
 
 This repository contains an automated end-to-end pipeline for downloading, processing, enriching, and aggregating options chain data from Yahoo Finance.  
-The pipeline runs both locally and via GitHub Actions, producing ready-to-use CSV datasets and ZIP artifacts.
+The pipeline runs both locally and via GitHub Actions, producing ready-to-use CSV datasets and artifacts.
 
 ---
 
@@ -17,107 +17,91 @@ The pipeline runs both locally and via GitHub Actions, producing ready-to-use CS
     - date range (`exp_start → exp_end`)
     - all expirations if filters are not provided
 - Normalizes columns into a consistent format
-- Saves data into per-ticker directories: csv_out/<TICKER>/<file>.csv
+- Saves data into per-ticker directories:
 
+  ```text
+  csv_out/<TICKER>/<file>.csv
+    ```
+  ## 2. Add Tenor (Days to Expiration)
 
----
-
-### 2. **Add Tenor (Days to Expiration)**
-
-**`add_tenor_days.py`**:
+**`add_tenor_days.py`**
 
 Computes:
+
+```text
 tenor_days = expiration_date − snap_date
-
-
+```
 Adds:
+- tenor_days
+- snap_date (taken from parameters.yaml, or current UTC date if not set)
+- Overwrites the original CSV files.
 
-- `tenor_days`
-- `snap_date`
+## 4. Add max_tenor
 
-Overwrites the original CSV files.
-
----
-
-### 3. **Calculate Relative Strike**
-
-**`add_relative_strike.py`**:
+**`add_max_tenor_for_strike.py`** (or `add_max_tenor.py` depending on your local filename):
 
 Computes:
 
-relative_strike = ABS(strike / spot_price) * 100
-
-
-Adds:
-
-- `spot_price`
-- `relative_strike`
-
-Overwrites each CSV file.
-
----
-
-### 4. **Add max_tenor**
-
-**`add_max_tenor_for_strike.py`**:
-
-Computes:
-
+```text
 max_tenor_for_strike = MAX(tenor_days WHERE strike == current_strike)
+```
 Equivalent to Excel:
+```text
 =MAXIFS(S:S, D:D, D2)
+```
+Adds max_tenor_for_strike per row and overwrites the CSV files.
 
+## 5. Strike Bucket Aggregation
 
-
----
-
-### 5. **Strike Bucket Aggregation**
-
-**`strike_buckets_summary.py`**:
+**`strike_buckets_summary.py`** (or `aggregate_strike_buckets.py` depending on your local filename):
 
 - Reads bucket definitions from `config/strike_buckets.yaml`
-- Aggregates `max(relative_strike)` per bucket
-- Produces:
+- Aggregates (e.g. `max(relative_strike)`) per bucket
+
+Produces per-ticker summary CSV:
+
+```text
 csv_out/<TICKER>/<TICKER>_strike_buckets_summary.csv
-
-
----
-
-## 📁 Repository Structure
-
 ```
+
+## 6. Repository Structure
+```text
 .
 ├── src/
 │   ├── options_to_csv.py
 │   ├── add_tenor_days.py
 │   ├── add_relative_strike.py
-│   ├── add_max_tenor_for_strike.py
-│   ├── strike_buckets_summary.py
+│   ├── add_max_tenor_for_strike.py      # or add_max_tenor.py
+│   ├── strike_buckets_summary.py        # or aggregate_strike_buckets.py
 │   └── helper.py
 │
 ├── config/
 │   ├── parameters.yaml
 │   └── strike_buckets.yaml
 │
-├── csv_out/                # auto-generated output
-│   └── *.csv
+├── csv_out/                             # runtime output + dated snapshots
+│   ├── <TICKER>/...                     # local runs / working area
+│   └── YYYY/
+│       └── MM/
+│           └── DD/
+│               └── enriched/
+│                   ├── AAPL/...
+│                   ├── MSFT/...
+│                   └── ...
 │
-├── _strike_buckets_summary.csv
+├── _strike_buckets_summary.csv          # optional global summary
 │
 ├── .github/
 │   └── workflows/
-│       └── pipeline.yml
+│       ├── options_pre_close.yml        # pre-close snapshot
+│       └── options_post_close.yml       # post-close enrichment
 │
 └── README.md
 ```
+## ⚙️ 7. Configuration
+parameters.yaml
 
-
----
-
-## ⚙️ Configuration
-
-### `parameters.yaml`
-
+Example:
 ```yaml
 tickers:
   - AAPL
@@ -125,107 +109,120 @@ tickers:
 
 outdir: csv_out
 
+# Optional: if not set, current UTC date is used
 snap_date: "2025-01-01"
-spot_price: 247.77
 
+# Optional per-ticker overrides for spot price.
+# If a ticker is not present here, spot_price is taken from yfinance.
+spot_price_overrides:
+  AAPL: 247.77
+  MSFT: 410.25
+
+# Expiration filters
 exp_start: "2025-08-01"
 exp_end: "2028-10-10"
-exp_dates: []
+exp_dates: []      # or a list of explicit expiration dates
 ```
+Strike buckets:
 ```yaml
 strike_buckets:
-- lower: 0.0
-  upper: 25.0
-- lower: 25.0
-  upper: 35.0
-  ...
-- lower: 175.0
-  upper: 9999.0
+  - lower: 0.0
+    upper: 25.0
+  - lower: 25.0
+    upper: 35.0
+  # ...
+  - lower: 175.0
+    upper: 9999.0
 ```
 
-## Running the Pipeline Locally
-
-### Run all steps
-
-```bash
+## 🖥8. Running the Pipeline Locally
+Run all steps
+```bash 
 python src/options_to_csv.py
 python src/add_tenor_days.py
 python src/add_relative_strike.py
-python src/add_max_tenor_for_strike.py
-python src/strike_buckets_summary.py
+python src/add_max_tenor_for_strike.py   # or add_max_tenor.py
+python src/strike_buckets_summary.py     # or aggregate_strike_buckets.py
 ```
-## GitHub Actions Automation
+You can also run any individual step independently.
 
-The pipeline can run automatically:
+## ⚙️ 9. GitHub Actions Automation
 
-- on a schedule (cron)
-- on push to the `main` branch
-- with automatic artifact export
+The pipeline is split into two workflows:
 
-### Example workflow: `.github/workflows/pipeline.yml`
+### 1. `options_pre_close.yml` – pre-close snapshot
 
-```yaml
-on:
-  schedule:
-    - cron: "0 4 * * *"
-  push:
-    branches: [ "main" ]
+Runs ~30 minutes before US market close (via `cron`) or manually via `workflow_dispatch`.
 
-jobs:
-  run-pipeline:
-    runs-on: ubuntu-latest
+Steps:
 
-    steps:
-      - uses: actions/checkout@v3
+- Cleans today’s `csv_out/YYYY/MM/DD/enriched` if it exists
+- Runs `options_to_csv.py`
+- Copies current `csv_out/<TICKER>/...` into a dated snapshot:
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
+  ```text
+  csv_out/YYYY/MM/DD/<TICKER>/...
+    ```
+  Commits the snapshot via GITHUB_TOKEN
+### 2. `options_post_close.yml` – post-close enrichment
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+Runs after US market close (via `cron`) or manually.
 
-      - name: Run pipeline
-        run: |
-          python src/options_to_csv.py
-          python src/add_tenor_days.py
-          python src/add_relative_strike.py
-          python src/add_max_tenor_for_strike.py
-          python src/strike_buckets_summary.py
+If there is **no snapshot for today** (`csv_out/YYYY/MM/DD`), the workflow stops with a clear message:
+Please run the 'Options snapshot before US close' workflow first.
 
-      - name: Upload results
-        uses: actions/upload-artifact@v3
-        with:
-          name: options-data
-          path: csv_out/
-```
+Otherwise it performs:
 
----
-## 🧪 Dependencies
+#### Workflow Steps
+
+- Restores today’s snapshot into the working `csv_out/` directory
+- Runs the enrichment scripts in order:
+
+   ```text
+   add_tenor_days.py
+   add_max_tenor_for_strike.py   (or add_max_tenor.py)
+   add_relative_strike.py
+   strike_buckets_summary.py     (or aggregate_strike_buckets.py)
+   ``` 
+   Saves enriched data into:
+    - csv_out/YYYY/MM/DD/enriched/<TICKER>/...
+    - Removes raw data under csv_out/YYYY/MM/DD/* except enriched/
+    - Commits updated csv_out/YYYY/MM/DD back to the repository
+    - Uploads an artifact containing only today's enriched data: csv_out/YYYY/MM/DD/enriched/
+
+## 🧪10. Dependencies
 
 Install all required packages:
 
 ```bash
 pip install -r requirements.txt
 ```
-Required packages
+Required packages include (non-exhaustive):
 - pandas
 - yfinance
 - pyyaml
-- zoneinfo (Python 3.9+)
-- Python 3.11 recommended
----
-## Artifacts
+- python-dateutil
+- tzdata / zoneinfo (for time zones, depending on Python version)
 
-GitHub Actions exports a ZIP archive:
-```
-options-data.zip
+Python 3.11 recommended
+
+## 📦11. Artifacts
+
+The post-close workflow uploads an artifact for the current run:
+
+```text
+options-csv-<run_number>.zip
 └── csv_out/
-└── <TICKER>/
-├── *_filtered.csv
-├── *_tenor.csv
-├── *_relative.csv
-├── *_max_tenor_for_strike.csv
-└── <TICKER>_strike_buckets_summary.csv
+    └── YYYY/
+        └── MM/
+            └── DD/
+                └── enriched/
+                    ├── AAPL/
+                    │   ├── AAPL_options_*.csv
+                    │   └── ...
+                    ├── MSFT/
+                    │   ├── MSFT_options_*.csv
+                    │   └── ...
+                    └── ...
 ```
+This artifact contains only enriched data for the date on which the workflow was executed.
