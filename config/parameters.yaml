@@ -1,12 +1,20 @@
 # List of stock tickers to download options for
 tickers:
   - AAPL
-  - MSFT
+  - GOOG
+  - AMZN
+  - LLY
+  - JPM
+  - META
+  - NVDA
+  - PLTR
+  - TSM
+  - NFLX
 
 # Optional expiration date range (inclusive).
 # Can be "YYYY-MM-DD", "DD-MM-YYYY", or empty string "" if not used.
-exp_start: "2025-08-01"
-exp_end:   "2028-10-10"
+exp_start:
+exp_end:
 
 # Optional explicit expiration dates. If non-empty, this list has priority
 # over exp_start / exp_end.
