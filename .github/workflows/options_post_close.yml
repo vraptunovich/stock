@@ -49,7 +49,7 @@ jobs:
             [ -e "$entry" ] || continue
             name=$(basename "$entry")
             if [[ "$name" =~ ^[0-9]{4}$ ]]; then
-              # Keep year directories (snapshots)
+              # Keep year directories (snapshot roots)
               continue
             fi
             echo "Removing existing working entry: $entry"
