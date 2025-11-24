@@ -41,13 +41,13 @@ jobs:
 
           if [ ! -d "${SNAP_DIR}" ]; then
             echo "ERROR: Snapshot directory ${SNAP_DIR} not found."
+            echo "Please run the 'Options snapshot before US close' workflow (options_pre_close) first."
             exit 1
           fi
 
           # If only enriched exists (no raw tickers), restore from enriched
           SOURCE_DIR="${SNAP_DIR}"
           if [ -d "${SNAP_DIR}/enriched" ]; then
-            # Check if SNAP_DIR contains anything except 'enriched'
             ONLY_ENRICHED=true
             for entry in "${SNAP_DIR}"/*; do
               [ -e "$entry" ] || continue
@@ -72,14 +72,12 @@ jobs:
             [ -e "$entry" ] || continue
             name=$(basename "$entry")
             if [[ "$name" =~ ^[0-9]{4}$ ]]; then
-              # Keep year directories (snapshot roots)
               continue
             fi
             echo "Removing existing working entry: $entry"
             rm -rf "$entry"
           done
 
-          # Copy snapshot data back into csv_out root (tickers, etc.)
           if compgen -G "${SOURCE_DIR}/*" > /dev/null; then
             cp -R "${SOURCE_DIR}/"* "csv_out/"
           else
@@ -109,7 +107,6 @@ jobs:
 
           echo "Saving enriched data into: ${ENRICHED_DIR}"
 
-          # Clean enriched dir completely before copying
           rm -rf "${ENRICHED_DIR}"
           mkdir -p "${ENRICHED_DIR}"
 
@@ -119,7 +116,7 @@ jobs:
               [ -e "$entry" ] || continue
               name=$(basename "$entry")
 
-              # Skip year directories (4 digits) and any top-level 'enriched'
+              # Skip year directories and any top-level 'enriched'
               if [[ "$name" =~ ^[0-9]{4}$ ]]; then
                 echo "Skipping snapshot year directory in working area: $entry"
                 continue
@@ -152,7 +149,6 @@ jobs:
             exit 0
           fi
 
-          # Remove everything in SNAP_DIR except 'enriched'
           for entry in "${SNAP_DIR}"/*; do
             [ -e "$entry" ] || continue
             name=$(basename "$entry")
@@ -162,6 +158,13 @@ jobs:
             echo "Removing raw entry from snapshot: $entry"
             rm -rf "$entry"
           done
+
+      - name: Compute date path output
+        id: date_path
+        shell: bash
+        run: |
+          DATE_PATH=$(date -u '+%Y/%m/%d')
+          echo "date_path=${DATE_PATH}" >> "$GITHUB_OUTPUT"
 
       - name: Commit enriched snapshot
         if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
@@ -184,7 +187,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Force-add entire SNAP_DIR so deletions of raw and additions in enriched are tracked
           git add -f "${SNAP_DIR}" || echo "Nothing to add from ${SNAP_DIR}"
 
           if git diff --cached --quiet; then
@@ -198,10 +200,10 @@ jobs:
           echo "Pushing using default GITHUB_TOKEN..."
           git push
 
-      - name: Upload CSV directory as artifact
+      - name: Upload CSV directory for this date as artifact
         uses: actions/upload-artifact@v4
         with:
           name: options-csv-${{ github.run_number }}
-          path: csv_out/
+          path: csv_out/${{ steps.date_path.outputs.date_path }}/enriched
           if-no-files-found: error
           retention-days: 1

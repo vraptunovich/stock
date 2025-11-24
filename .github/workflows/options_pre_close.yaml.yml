@@ -17,7 +17,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Default: persist-credentials: true → git push uses GITHUB_TOKEN
           fetch-depth: 0
 
       - name: Set up Python
@@ -28,6 +27,23 @@ jobs:
       - name: Install Python dependencies
         if: hashFiles('requirements.txt') != ''
         run: pip install -r requirements.txt
+
+      - name: Clean today's enriched directory before snapshot
+        shell: bash
+        run: |
+          set -e
+
+          DATE_PATH=$(date -u '+%Y/%m/%d')
+          ENRICHED_DIR="csv_out/${DATE_PATH}/enriched"
+
+          echo "Checking for today's enriched directory: ${ENRICHED_DIR}"
+
+          if [ -d "${ENRICHED_DIR}" ]; then
+            echo "Removing existing enriched directory: ${ENRICHED_DIR}"
+            rm -rf "${ENRICHED_DIR}"
+          else
+            echo "No enriched directory for today. Nothing to clean."
+          fi
 
       - name: Run options script (pre-close snapshot)
         run: python src/options_to_csv.py
