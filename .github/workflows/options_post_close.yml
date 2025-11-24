@@ -6,7 +6,7 @@ on:
     - cron: '15 21 * * 1-5'
   workflow_dispatch:
 
-# We only need read for contents; push goes via PAT (REPO_PUSH_TOKEN)
+# Read-only for GITHUB_TOKEN; push uses REPO_PUSH_TOKEN
 permissions:
   contents: read
 
@@ -118,6 +118,7 @@ jobs:
         env:
           REPO_PUSH_TOKEN: ${{ secrets.REPO_PUSH_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_ACTOR: ${{ github.actor }}
         run: |
           set -e
 
@@ -147,8 +148,8 @@ jobs:
           DATE_UTC=$(date -u '+%Y-%m-%d')
           git commit -m "Enriched options data for ${DATE_UTC}"
 
-          echo "Pushing using REPO_PUSH_TOKEN..."
-          git push "https://x-access-token:${REPO_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          echo "Pushing enriched snapshot using REPO_PUSH_TOKEN as ${GITHUB_ACTOR}..."
+          git push "https://${GITHUB_ACTOR}:${REPO_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
       - name: Upload CSV directory as artifact
         uses: actions/upload-artifact@v4

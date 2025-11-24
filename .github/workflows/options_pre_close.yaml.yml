@@ -65,6 +65,7 @@ jobs:
         env:
           REPO_PUSH_TOKEN: ${{ secrets.REPO_PUSH_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_ACTOR: ${{ github.actor }}
         run: |
           set -e
 
@@ -93,5 +94,5 @@ jobs:
           DATE_UTC=$(date -u '+%Y-%m-%d')
           git commit -m "Snapshot options data for ${DATE_UTC}"
 
-          echo "Pushing using REPO_PUSH_TOKEN..."
-          git push "https://x-access-token:${REPO_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          echo "Pushing using REPO_PUSH_TOKEN as ${GITHUB_ACTOR}..."
+          git push "https://${GITHUB_ACTOR}:${REPO_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
