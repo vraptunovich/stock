@@ -1,107 +1,127 @@
-📈 Options Data Processing Pipeline
+# 📈 Options Data Processing Pipeline
 
-This repository contains an automated end-to-end pipeline for downloading, processing, enriching, and aggregating options chain data from Yahoo Finance.
+This repository contains an automated end-to-end pipeline for downloading, processing, enriching, and aggregating options chain data from Yahoo Finance.  
 The pipeline runs both locally and via GitHub Actions, producing ready-to-use CSV datasets and ZIP artifacts.
 
-🚀 Features
-1. Download Options Chains
+---
 
-options_to_csv.py:
+## 🚀 Features
 
-Fetches option chains from Yahoo Finance
+### 1. **Download Options Chains**
 
-Applies expiration filters:
+**`options_to_csv.py`**:
 
-exact dates (exp_dates)
+- Fetches option chains from Yahoo Finance
+- Applies expiration filters:
+    - exact dates (`exp_dates`)
+    - date range (`exp_start → exp_end`)
+    - all expirations if filters are not provided
+- Normalizes columns into a consistent format
+- Saves data into per-ticker directories: csv_out/<TICKER>/<file>.csv
 
-date range (exp_start → exp_end)
 
-all expirations if filters are not provided
+---
 
-Normalizes columns into a consistent format
+### 2. **Add Tenor (Days to Expiration)**
 
-Saves data into per-ticker directories:
+**`add_tenor_days.py`**:
 
-csv_out/<TICKER>/<file>.csv
-
-2. Add Tenor (Days to Expiration)
-
-add_tenor_days.py:
-
-Computes
-
+Computes:
 tenor_days = expiration_date − snap_date
 
 
-Adds a snap_date column to every row
+Adds:
 
-Overwrites the original CSV files
+- `tenor_days`
+- `snap_date`
 
-3. Calculate Relative Strike
+Overwrites the original CSV files.
 
-add_relative_strike.py:
+---
 
-Computes
+### 3. **Calculate Relative Strike**
+
+**`add_relative_strike.py`**:
+
+Computes:
 
 relative_strike = ABS(strike / spot_price) * 100
 
 
-Adds spot_price column
+Adds:
 
-Overwrites each CSV file
+- `spot_price`
+- `relative_strike`
 
-4. Add MAXIFS-style Aggregation
+Overwrites each CSV file.
 
-add_max_tenor_for_strike.py:
+---
 
-Computes
+### 4. **Add max_tenor**
+
+**`add_max_tenor_for_strike.py`**:
+
+Computes:
 
 max_tenor_for_strike = MAX(tenor_days WHERE strike == current_strike)
-
-
 Equivalent to Excel:
 =MAXIFS(S:S, D:D, D2)
 
-5. Strike Bucket Aggregation
 
-strike_buckets_summary.py:
 
-Reads bucket definitions from config/strike_buckets.yaml
+---
 
-Aggregates max(relative_strike) per bucket
+### 5. **Strike Bucket Aggregation**
 
-Produces summary file:
+**`strike_buckets_summary.py`**:
 
+- Reads bucket definitions from `config/strike_buckets.yaml`
+- Aggregates `max(relative_strike)` per bucket
+- Produces:
 csv_out/<TICKER>/<TICKER>_strike_buckets_summary.csv
 
-Repository structure
+
+---
+
+## 📁 Repository Structure
+
+```
 .
+├── src/
+│   ├── options_to_csv.py
+│   ├── add_tenor_days.py
+│   ├── add_relative_strike.py
+│   ├── add_max_tenor_for_strike.py
+│   ├── strike_buckets_summary.py
+│   └── helper.py
+│
+├── config/
+│   ├── parameters.yaml
+│   └── strike_buckets.yaml
+│
+├── csv_out/                # auto-generated output
+│   └── *.csv
+│
+├── _strike_buckets_summary.csv
+│
+├── .github/
+│   └── workflows/
+│       └── pipeline.yml
+│
+└── README.md
+```
 
-.
-|-- src/
-|   |-- options_to_csv.py
-|   |-- add_tenor_days.py
-|   |-- add_relative_strike.py
-|   |-- add_max_tenor_for_strike.py
-|   |-- strike_buckets_summary.py
-|   |-- helper.py
-|   `-- config/
-|       |-- parameters.yaml
-|       |-- strike_buckets.yaml
-|       `-- csv_out/                # auto-generated output
-|           |-- *.csv
-|           `-- _strike_buckets_summary.csv
-|-- .github/
-|   `-- workflows/
-|       `-- pipeline.yml
-`-- README.md
 
+---
 
-⚙️ Configuration
-parameters.yaml
+## ⚙️ Configuration
+
+### `parameters.yaml`
+
+```yaml
 tickers:
-- AAPL
-- MSFT
+  - AAPL
+  - MSFT
 
 outdir: csv_out
 
@@ -111,8 +131,8 @@ spot_price: 247.77
 exp_start: "2025-08-01"
 exp_end: "2028-10-10"
 exp_dates: []
-
-strike_buckets.yaml
+```
+```yaml
 strike_buckets:
 - lower: 0.0
   upper: 25.0
@@ -121,43 +141,39 @@ strike_buckets:
   ...
 - lower: 175.0
   upper: 9999.0
+```
 
-▶️ Running the Pipeline Locally
+## Running the Pipeline Locally
 
-Run all steps:
+### Run all steps
 
+```bash
 python src/options_to_csv.py
 python src/add_tenor_days.py
 python src/add_relative_strike.py
 python src/add_max_tenor_for_strike.py
 python src/strike_buckets_summary.py
-
-
-Run a single step:
-
-python src/add_relative_strike.py
-
-🤖 GitHub Actions Automation
+```
+## GitHub Actions Automation
 
 The pipeline can run automatically:
 
-on a schedule (cron)
+- on a schedule (cron)
+- on push to the `main` branch
+- with automatic artifact export
 
-on push to main
+### Example workflow: `.github/workflows/pipeline.yml`
 
-with artifact export
-
-Example workflow (.github/workflows/pipeline.yml):
-
+```yaml
 on:
-schedule:
-- cron: "0 4 * * *"
-push:
-branches: [ "main" ]
+  schedule:
+    - cron: "0 4 * * *"
+  push:
+    branches: [ "main" ]
 
 jobs:
-run-pipeline:
-runs-on: ubuntu-latest
+  run-pipeline:
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v3
@@ -183,39 +199,27 @@ runs-on: ubuntu-latest
         with:
           name: options-data
           path: csv_out/
+```
 
-🧪 Dependencies
+---
+## 🧪 Dependencies
 
-Install using:
+Install all required packages:
 
+```bash
 pip install -r requirements.txt
+```
+Required packages
+- pandas
+- yfinance
+- pyyaml
+- zoneinfo (Python 3.9+)
+- Python 3.11 recommended
+---
+## Artifacts
 
-
-Required packages:
-
-pandas
-
-yfinance
-
-pyyaml
-
-zoneinfo (Python 3.9+)
-
-Python 3.11 recommended
-
-📜 Logging
-
-All scripts use a shared logging format:
-
-%(asctime)s [%(levelname)s] %(name)s - %(message)s
-
-
-Logs appear in GitHub Actions in real time.
-
-📦 Artifacts
-
-GitHub Actions exports:
-
+GitHub Actions exports a ZIP archive:
+```
 options-data.zip
 └── csv_out/
 └── <TICKER>/
@@ -224,3 +228,4 @@ options-data.zip
 ├── *_relative.csv
 ├── *_max_tenor_for_strike.csv
 └── <TICKER>_strike_buckets_summary.csv
+```
