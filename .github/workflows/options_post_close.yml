@@ -41,22 +41,27 @@ jobs:
 
           echo "Restoring snapshot from ${SNAP_DIR} into csv_out/"
 
-          # Use temporary directory to avoid overwriting while copying
-          TMP_DIR="csv_out_tmp_restore"
-          rm -rf "${TMP_DIR}"
-          mkdir -p "${TMP_DIR}"
+          # Ensure csv_out exists
+          mkdir -p csv_out
 
-          # Copy snapshot data into temporary directory
-          cp -R "${SNAP_DIR}/"* "${TMP_DIR}/" || echo "Snapshot directory is empty."
+          # Remove all top-level entries in csv_out that are NOT year directories (4 digits)
+          for entry in csv_out/*; do
+            [ -e "$entry" ] || continue
+            name=$(basename "$entry")
+            if [[ "$name" =~ ^[0-9]{4}$ ]]; then
+              # Keep year directories (snapshots)
+              continue
+            fi
+            echo "Removing existing working entry: $entry"
+            rm -rf "$entry"
+          done
 
-          # Clean current csv_out root (but keep the dated snapshots themselves)
-          # We remove only top-level entries inside csv_out (not csv_out itself).
-          find csv_out -mindepth 1 -maxdepth 1 -not -path "${SNAP_DIR}" -exec rm -rf {} +
-
-          # Now copy restored data back into csv_out root
-          cp -R "${TMP_DIR}/"* "csv_out/" || echo "Nothing to restore into csv_out"
-
-          rm -rf "${TMP_DIR}"
+          # Copy snapshot data back into csv_out root (tickers, etc.)
+          if compgen -G "${SNAP_DIR}/*" > /dev/null; then
+            cp -R "${SNAP_DIR}/"* "csv_out/"
+          else
+            echo "Snapshot directory ${SNAP_DIR} is empty, nothing to restore."
+          fi
 
       - name: Add tenor_days column
         run: python src/add_tenor_days.py

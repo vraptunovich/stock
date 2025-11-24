@@ -39,11 +39,14 @@ jobs:
 
           mkdir -p "${TARGET_DIR}"
 
-          # Copy current csv_out contents into dated snapshot directory
           if [ -d "csv_out" ]; then
             echo "Copying csv_out/* to ${TARGET_DIR}"
-            # Copy only children of csv_out, not csv_out itself
-            cp -R csv_out/* "${TARGET_DIR}/" || echo "Nothing to copy from csv_out"
+            # Copy only if there is something inside csv_out
+            if compgen -G "csv_out/*" > /dev/null; then
+              cp -R csv_out/* "${TARGET_DIR}/"
+            else
+              echo "csv_out is empty, nothing to copy."
+            fi
           else
             echo "Directory csv_out does not exist, nothing to snapshot."
           fi
@@ -56,13 +59,24 @@ jobs:
         run: |
           set -e
 
+          # Use the same UTC date path as above
+          DATE_PATH=$(date -u '+%Y/%m/%d')
+          TARGET_DIR="csv_out/${DATE_PATH}"
+
+          echo "Committing snapshot from: ${TARGET_DIR}"
+
+          if [ ! -d "${TARGET_DIR}" ]; then
+            echo "Snapshot directory ${TARGET_DIR} does not exist. Nothing to commit."
+            exit 0
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Stage csv_out changes
-          git add csv_out/ || echo "Nothing to add"
+          # Force-add snapshot directory even if csv_out is in .gitignore
+          git add -f "${TARGET_DIR}" || echo "Nothing to add from ${TARGET_DIR}"
 
-          # Commit only if there are real changes
+          # Commit only if there are staged changes
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
