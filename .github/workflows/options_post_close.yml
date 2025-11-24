@@ -1,0 +1,79 @@
+name: Enrich options after US close
+
+on:
+  schedule:
+    # 21:15 UTC ≈ ~15 minutes after US market close during EST (Mon–Fri)
+    - cron: '15 21 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  postclose-processing:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        if: hashFiles('requirements.txt') != ''
+        run: pip install -r requirements.txt
+
+      - name: Restore snapshot for today into csv_out/
+        shell: bash
+        run: |
+          set -e
+
+          # Use current UTC date to locate snapshot: csv_out/YYYY/MM/DD/
+          DATE_PATH=$(date -u '+%Y/%m/%d')
+          SNAP_DIR="csv_out/${DATE_PATH}"
+
+          echo "Looking for snapshot directory: ${SNAP_DIR}"
+
+          if [ ! -d "${SNAP_DIR}" ]; then
+            echo "ERROR: Snapshot directory ${SNAP_DIR} not found."
+            exit 1
+          fi
+
+          echo "Restoring snapshot from ${SNAP_DIR} into csv_out/"
+
+          # Use temporary directory to avoid overwriting while copying
+          TMP_DIR="csv_out_tmp_restore"
+          rm -rf "${TMP_DIR}"
+          mkdir -p "${TMP_DIR}"
+
+          # Copy snapshot data into temporary directory
+          cp -R "${SNAP_DIR}/"* "${TMP_DIR}/" || echo "Snapshot directory is empty."
+
+          # Clean current csv_out root (but keep the dated snapshots themselves)
+          # We remove only top-level entries inside csv_out (not csv_out itself).
+          find csv_out -mindepth 1 -maxdepth 1 -not -path "${SNAP_DIR}" -exec rm -rf {} +
+
+          # Now copy restored data back into csv_out root
+          cp -R "${TMP_DIR}/"* "csv_out/" || echo "Nothing to restore into csv_out"
+
+          rm -rf "${TMP_DIR}"
+
+      - name: Add tenor_days column
+        run: python src/add_tenor_days.py
+
+      - name: Add max_tenor_for_strike
+        run: python src/add_max_tenor.py
+
+      - name: Add relative_strike
+        run: python src/add_relative_strike.py
+
+      - name: Aggregate strike buckets
+        run: python src/aggregate_strike_buckets.py
+
+      - name: Upload CSV directory as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: options-csv-${{ github.run_number }}
+          path: csv_out/
+          if-no-files-found: error
+          retention-days: 1

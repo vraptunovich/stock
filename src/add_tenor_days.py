@@ -4,7 +4,7 @@
 """
 This script:
   - loads configuration from config/parameters.yaml
-  - reads snap_date from config
+  - reads snap_date from config (or uses current date if not set)
   - iterates over all CSV files under outdir/<ticker>/
   - computes:
       * tenor_days = (expiration - snap_date) in days
@@ -80,6 +80,7 @@ def run(config: dict) -> None:
       - loads configuration
       - locates all CSV files under outdir/<ticker> directories
       - adds tenor_days and snap_date columns based on snap_date
+        (if snap_date is not set, uses current date)
     """
     tickers = config.get("tickers", [])
     outdir_name = config.get("outdir", "csv_out")
@@ -91,11 +92,15 @@ def run(config: dict) -> None:
 
     # Resolve snapshot date
     if not snap_date_str:
-        logger.error("snap_date is not set in config. Please provide snap_date.")
-        raise ValueError("snap_date is not set in config. Please provide snap_date.")
-
-    snap_dt = parse_date(snap_date_str)
-    logger.info("Using snap_date: %s", snap_dt.date().isoformat())
+        # Use current UTC time if snap_date is not provided
+        snap_dt = datetime.utcnow()
+        logger.info(
+            "snap_date is not set in config. Using current date as snap_date: %s",
+            snap_dt.date().isoformat(),
+        )
+    else:
+        snap_dt = parse_date(snap_date_str)
+        logger.info("Using snap_date from config: %s", snap_dt.date().isoformat())
 
     # Base output directory (root/outdir)
     outdir = BASE_DIR / outdir_name

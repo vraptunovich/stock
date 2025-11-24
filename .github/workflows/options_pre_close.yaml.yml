@@ -1,0 +1,73 @@
+name: Options snapshot before US close
+
+on:
+  schedule:
+    # 20:30 UTC ≈ 30 minutes before US market close during EST (Mon–Fri)
+    - cron: '30 20 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  preclose-snapshot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        if: hashFiles('requirements.txt') != ''
+        run: pip install -r requirements.txt
+
+      - name: Run options script (pre-close snapshot)
+        run: python src/options_to_csv.py
+
+      - name: Copy snapshot into dated directory
+        shell: bash
+        run: |
+          set -e
+
+          # Use current UTC date for directory structure: csv_out/YYYY/MM/DD/
+          DATE_PATH=$(date -u '+%Y/%m/%d')
+          TARGET_DIR="csv_out/${DATE_PATH}"
+
+          echo "Using snapshot directory: ${TARGET_DIR}"
+
+          mkdir -p "${TARGET_DIR}"
+
+          # Copy current csv_out contents into dated snapshot directory
+          if [ -d "csv_out" ]; then
+            echo "Copying csv_out/* to ${TARGET_DIR}"
+            # Copy only children of csv_out, not csv_out itself
+            cp -R csv_out/* "${TARGET_DIR}/" || echo "Nothing to copy from csv_out"
+          else
+            echo "Directory csv_out does not exist, nothing to snapshot."
+          fi
+
+      - name: Commit snapshot
+        if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Stage csv_out changes
+          git add csv_out/ || echo "Nothing to add"
+
+          # Commit only if there are real changes
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          DATE_UTC=$(date -u '+%Y-%m-%d')
+          git commit -m "Snapshot options data for ${DATE_UTC}"
+          git push

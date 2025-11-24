@@ -4,23 +4,27 @@
 """
 This script:
   - loads configuration from config/parameters.yaml
-  - reads spot_price from config
-  - iterates over all CSV files under outdir/<ticker>/
-  - reads strike column
+  - reads snap_date (or uses current UTC date if missing)
+  - optionally reads spot_price_overrides per ticker from config
+  - for each ticker:
+        * uses overridden spot_price if provided
+        * otherwise fetches spot_price from yfinance
+  - loads all CSV files under outdir/<ticker>/
   - computes:
-      * relative_strike = ABS(strike / spot_price) * 100
-      * spot_price column with the spot price used
+        spot_price = underlying price
+        relative_strike = ABS(strike / spot_price) * 100
   - overwrites the CSV files
 """
 
+from datetime import datetime
 from pathlib import Path
 import logging
 
 import pandas as pd
 
-from helper import load_config
+from helper import load_config, parse_date, get_spot_price
 
-# Repository root assuming this file is under src/
+# Resolve repository root assuming this file is under src/
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ---------------------------------------------------------
@@ -41,61 +45,90 @@ logging.basicConfig(
 
 def add_relative_strike_to_file(csv_path: Path, spot_price: float) -> None:
     """
-    Load a CSV file, compute:
-      - relative_strike = ABS(strike / spot_price) * 100
-      - spot_price column with the spot price used
-    Add both as columns and overwrite the original file.
+    Loads a CSV file and computes:
+
+        - spot_price (constant per file)
+        - relative_strike = ABS(strike / spot_price) * 100
+
+    The updated file overwrites the original CSV.
     """
     logger.info("Processing file: %s", csv_path)
 
     df = pd.read_csv(csv_path)
 
     if "strike" not in df.columns:
-        logger.warning("Skipped file %s: no 'strike' column", csv_path.name)
+        logger.warning("Skipped file %s: 'strike' column not found", csv_path.name)
         return
 
-    if spot_price == 0:
-        logger.error("Skipped file %s: spot_price is 0 (division by zero)", csv_path.name)
-        return
-
-    # Ensure strike is numeric
-    df["strike"] = pd.to_numeric(df["strike"], errors="coerce")
-
-    # Compute relative_strike in percent
-    df["relative_strike"] = (df["strike"] / spot_price).abs() * 100.0
-
-    # Add spot_price as a separate column (same value for all rows)
-    df["spot_price"] = spot_price
+    df["spot_price"] = float(spot_price)
+    df["relative_strike"] = (df["strike"] / df["spot_price"]).abs() * 100.0
 
     df.to_csv(csv_path, index=False)
-    logger.info("✅ Updated file: %s", csv_path)
+    logger.info("Updated file: %s", csv_path)
+
+
+def resolve_spot_price_for_ticker(
+        ticker: str,
+        snap_dt: datetime,
+        overrides: dict,
+) -> float:
+    """
+    Resolves spot_price for a given ticker:
+
+        - If the ticker is present in overrides, use that value.
+        - Otherwise, call get_spot_price(...) (yfinance).
+    """
+    if overrides and ticker in overrides:
+        spot_price = float(overrides[ticker])
+        logger.info(
+            "Ticker %s: using overridden spot_price from config = %.4f",
+            ticker,
+            spot_price,
+        )
+        return spot_price
+
+    spot_price = get_spot_price(ticker, snap_dt)
+    logger.info(
+        "Ticker %s: spot_price from yfinance for %s = %.4f",
+        ticker,
+        snap_dt.date().isoformat(),
+        spot_price,
+    )
+    return spot_price
 
 
 def run(config: dict) -> None:
     """
-    Main execution function:
-      - reads tickers, outdir, spot_price from config
-      - iterates over all CSV files under outdir/<ticker>/
-      - calls add_relative_strike_to_file for each file
+    Main execution:
+
+        - resolve tickers
+        - determine snap_date (config or current UTC date)
+        - read spot_price_overrides (if present)
+        - for each ticker:
+              * resolve spot_price (override or yfinance)
+              * enrich each CSV with spot_price and relative_strike
     """
     tickers = config.get("tickers", [])
     outdir_name = config.get("outdir", "csv_out")
-    spot_price = config.get("spot_price", None)
+    snap_date_str = config.get("snap_date")
+    spot_price_overrides = config.get("spot_price_overrides", {}) or {}
 
     if not tickers:
-        logger.warning("No tickers configured. Nothing to do.")
+        logger.warning("No tickers configured. Nothing to process.")
         return
 
-    if spot_price is None:
-        logger.error("spot_price is not set in config. Please provide spot_price.")
-        raise ValueError("spot_price is not set in config. Please provide spot_price.")
+    # Resolve snapshot date
+    if snap_date_str:
+        snap_dt = parse_date(snap_date_str)
+        logger.info("Using snap_date from config: %s", snap_dt.date().isoformat())
+    else:
+        snap_dt = datetime.utcnow()
+        logger.info(
+            "snap_date not provided → using current UTC date: %s",
+            snap_dt.date().isoformat(),
+        )
 
-    try:
-        spot_price = float(spot_price)
-    except (TypeError, ValueError):
-        logger.error("Invalid spot_price in config: %r", spot_price)
-        raise ValueError(f"Invalid spot_price in config: {spot_price!r}")
-
+    # Output directory
     outdir = BASE_DIR / outdir_name
 
     if not outdir.exists():
@@ -105,12 +138,19 @@ def run(config: dict) -> None:
     logger.info("Starting relative_strike enrichment")
     logger.info("Output directory: %s", outdir)
     logger.info("Tickers: %s", ", ".join(tickers))
-    logger.info("spot_price: %s", spot_price)
 
+    if spot_price_overrides:
+        logger.info(
+            "spot_price_overrides found in config for tickers: %s",
+            ", ".join(spot_price_overrides.keys()),
+        )
+
+    # Per-ticker processing
     for ticker in tickers:
         ticker_dir = outdir / ticker
+
         if not ticker_dir.exists():
-            logger.warning("No directory for ticker %s: %s", ticker, ticker_dir)
+            logger.warning("Directory for ticker %s not found: %s", ticker, ticker_dir)
             continue
 
         csv_files = sorted(ticker_dir.glob("*.csv"))
@@ -118,11 +158,27 @@ def run(config: dict) -> None:
             logger.warning("No CSV files for ticker %s in %s", ticker, ticker_dir)
             continue
 
-        logger.info("Ticker %s: found %d CSV files", ticker, len(csv_files))
+        # Resolve spot_price (override or yfinance)
+        try:
+            spot_price = resolve_spot_price_for_ticker(
+                ticker=ticker,
+                snap_dt=snap_dt,
+                overrides=spot_price_overrides,
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to resolve spot_price for ticker %s: %s (Skipping ticker)",
+                ticker,
+                exc,
+            )
+            continue
+
+        logger.info("Ticker %s: %d CSV files found", ticker, len(csv_files))
+
         for csv_path in csv_files:
             add_relative_strike_to_file(csv_path, spot_price)
 
-    logger.info("relative_strike enrichment completed")
+    logger.info("relative_strike enrichment completed.")
 
 
 if __name__ == "__main__":

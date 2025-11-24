@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Union, Optional
 from zoneinfo import ZoneInfo
 
-import logging
 import pandas as pd
 import yaml
+import yfinance as yf
 
 # Repository root, assuming this file is under src/
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -105,3 +106,46 @@ def to_edt(dt: pd.Timestamp | None) -> str | None:
     formatted = edt.strftime("%Y-%m-%d %H:%M:%S %Z")
     logger.debug("to_edt: %s -> %s", ts, formatted)
     return formatted
+
+
+def get_spot_price(ticker: str, snap_dt: datetime | None = None) -> float:
+    """
+    Returns the spot (underlying) price for a ticker.
+
+    - If snap_dt is None:
+        returns the current/last available price.
+    - If snap_dt is provided:
+        returns the close price for that specific calendar date.
+    """
+
+    t = yf.Ticker(ticker)
+
+    # Case 1: No historical date provided → use latest price
+    if snap_dt is None:
+        info = getattr(t, "fast_info", None)
+        price = None
+
+        if info is not None:
+            for key in ("lastPrice", "last_price", "last", "regularMarketPrice"):
+                if key in info and info[key] is not None:
+                    price = info[key]
+                    break
+
+        # Fallback if fast_info is not available
+        if price is None:
+            hist = t.history(period="1d")
+            if hist.empty:
+                raise ValueError(f"No current price data available for {ticker}.")
+            price = hist["Close"].iloc[-1]
+
+        return float(price)
+
+    # Case 2: Historical price for snapshot date
+    start = snap_dt.strftime("%Y-%m-%d")
+    end = (snap_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    hist = t.history(start=start, end=end)
+    if hist.empty:
+        raise ValueError(f"No historical price found for {ticker} on {snap_dt.date()}.")
+
+    return float(hist["Close"].iloc[0])

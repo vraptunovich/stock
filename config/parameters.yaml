@@ -17,6 +17,8 @@ exp_dates: []
 # This directory will also be uploaded as an artifact in GitHub Actions.
 outdir: "csv_out"
 
-snap_date: "2025-11-18"
+snap_date:
 
-spot_price: 247.77
+
+spot_price_overrides:
+  SPY: 520.10
