@@ -44,9 +44,27 @@ jobs:
             exit 1
           fi
 
-          echo "Restoring snapshot from ${SNAP_DIR} into csv_out/"
+          # If only enriched exists (no raw tickers), restore from enriched
+          SOURCE_DIR="${SNAP_DIR}"
+          if [ -d "${SNAP_DIR}/enriched" ]; then
+            # Check if SNAP_DIR contains anything except 'enriched'
+            ONLY_ENRICHED=true
+            for entry in "${SNAP_DIR}"/*; do
+              [ -e "$entry" ] || continue
+              name=$(basename "$entry")
+              if [ "$name" != "enriched" ]; then
+                ONLY_ENRICHED=false
+                break
+              fi
+            done
+            if [ "$ONLY_ENRICHED" = true ]; then
+              echo "Snapshot already cleaned, restoring from ${SNAP_DIR}/enriched"
+              SOURCE_DIR="${SNAP_DIR}/enriched"
+            fi
+          fi
 
-          # Ensure csv_out exists
+          echo "Restoring snapshot from ${SOURCE_DIR} into csv_out/"
+
           mkdir -p csv_out
 
           # Remove all top-level entries in csv_out that are NOT year directories (4 digits)
@@ -62,10 +80,10 @@ jobs:
           done
 
           # Copy snapshot data back into csv_out root (tickers, etc.)
-          if compgen -G "${SNAP_DIR}/*" > /dev/null; then
-            cp -R "${SNAP_DIR}/"* "csv_out/"
+          if compgen -G "${SOURCE_DIR}/*" > /dev/null; then
+            cp -R "${SOURCE_DIR}/"* "csv_out/"
           else
-            echo "Snapshot directory ${SNAP_DIR} is empty, nothing to restore."
+            echo "Source directory ${SOURCE_DIR} is empty, nothing to restore."
           fi
 
       - name: Add tenor_days column
@@ -91,18 +109,23 @@ jobs:
 
           echo "Saving enriched data into: ${ENRICHED_DIR}"
 
+          # Clean enriched dir completely before copying
+          rm -rf "${ENRICHED_DIR}"
           mkdir -p "${ENRICHED_DIR}"
 
           if [ -d "csv_out" ]; then
             echo "Copying working csv_out contents to ${ENRICHED_DIR}"
-            # Iterate over top-level entries in csv_out
             for entry in csv_out/*; do
               [ -e "$entry" ] || continue
               name=$(basename "$entry")
 
-              # Skip year directories (4 digits), they are snapshot roots
+              # Skip year directories (4 digits) and any top-level 'enriched'
               if [[ "$name" =~ ^[0-9]{4}$ ]]; then
-                echo "Skipping snapshot year directory: $entry"
+                echo "Skipping snapshot year directory in working area: $entry"
+                continue
+              fi
+              if [ "$name" = "enriched" ]; then
+                echo "Skipping existing enriched directory in working area: $entry"
                 continue
               fi
 
@@ -164,7 +187,6 @@ jobs:
           # Force-add entire SNAP_DIR so deletions of raw and additions in enriched are tracked
           git add -f "${SNAP_DIR}" || echo "Nothing to add from ${SNAP_DIR}"
 
-          # Commit only if there are staged changes
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
