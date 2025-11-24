@@ -6,9 +6,8 @@ on:
     - cron: '15 21 * * 1-5'
   workflow_dispatch:
 
-# Read-only for GITHUB_TOKEN; push uses REPO_PUSH_TOKEN
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   postclose-processing:
@@ -17,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -116,9 +117,7 @@ jobs:
         if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
         shell: bash
         env:
-          REPO_PUSH_TOKEN: ${{ secrets.REPO_PUSH_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
 
@@ -148,8 +147,8 @@ jobs:
           DATE_UTC=$(date -u '+%Y-%m-%d')
           git commit -m "Enriched options data for ${DATE_UTC}"
 
-          echo "Pushing enriched snapshot using REPO_PUSH_TOKEN as ${GITHUB_ACTOR}..."
-          git push "https://${GITHUB_ACTOR}:${REPO_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          echo "Pushing using default GITHUB_TOKEN..."
+          git push
 
       - name: Upload CSV directory as artifact
         uses: actions/upload-artifact@v4
