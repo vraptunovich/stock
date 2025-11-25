@@ -30,3 +30,7 @@ snap_date:
 
 spot_price_overrides:
   SPY: 520.10
+
+
+portfolio_file_name: equity_vanilla_portfolio.csv
+valuation_date: 2025-11-24
