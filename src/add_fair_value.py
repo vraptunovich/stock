@@ -33,40 +33,36 @@ def parse_relative_strike(value):
     return float(value)
 
 
-def load_summary_for(key, base_stock_dir: Path, cache: dict):
+def load_summary_for(ticker: str, base_stock_dir: Path, cache: dict):
     """
-    Load and cache bucket summary DataFrame for given (run_date, ticker).
+    Load and cache bucket summary DataFrame for given ticker.
     This avoids reading the same CSV multiple times.
-    key: (run_date: date, ticker: str)
+
+    Expected file path:
+      <base_stock_dir>/csv_out/<TICKER>/<TICKER>_strike_buckets_summary.csv
+
+    Expected columns in summary CSV:
+      - lower
+      - upper
+      - max_tenor_for_strike
     """
-    if key in cache:
-        return cache[key]
+    if ticker in cache:
+        return cache[ticker]
 
-    run_date, ticker = key
-    year = run_date.year
-    month = run_date.month
-    day = run_date.day
-
-    # Path: <base_stock_dir>/csv_out/YYYY/MM/DD/enriched/TICKER/TICKER_strike_buckets_summary.csv
     summary_path = (
             base_stock_dir
             / "csv_out"
-            / f"{year:04d}"
-            / f"{month:02d}"
-            / f"{day:02d}"
-            / "enriched"
             / ticker
             / f"{ticker}_strike_buckets_summary.csv"
     )
 
     if not summary_path.exists():
         logging.warning(
-            "Summary file not found for ticker=%s date=%s at path=%s",
+            "Summary file not found for ticker=%s at path=%s",
             ticker,
-            run_date,
             summary_path,
         )
-        cache[key] = None
+        cache[ticker] = None
         return None
 
     logging.info("Loading summary file for ticker=%s from %s", ticker, summary_path)
@@ -76,8 +72,29 @@ def load_summary_for(key, base_stock_dir: Path, cache: dict):
         len(df_summary),
         ticker,
     )
-    cache[key] = df_summary
-    return cache[key]
+
+    # Basic sanity check for expected columns
+    required_cols = {"lower", "upper", "max_tenor_for_strike"}
+    missing = required_cols.difference(df_summary.columns)
+    if missing:
+        logging.error(
+            "Summary file %s for ticker=%s is missing columns: %s",
+            summary_path,
+            ticker,
+            ", ".join(sorted(missing)),
+        )
+        cache[ticker] = None
+        return None
+
+    # Ensure numeric types
+    df_summary["lower"] = pd.to_numeric(df_summary["lower"], errors="coerce")
+    df_summary["upper"] = pd.to_numeric(df_summary["upper"], errors="coerce")
+    df_summary["max_tenor_for_strike"] = pd.to_numeric(
+        df_summary["max_tenor_for_strike"], errors="coerce"
+    )
+
+    cache[ticker] = df_summary
+    return cache[ticker]
 
 
 def parse_config_date(value) -> date:
@@ -124,7 +141,11 @@ def main():
 
     # Expect these keys in parameters.yaml:
     #   portfolio_file_name: equity_vanilla_portfolio.csv
-    #   valuation_date: 2025-11-24
+    #   valuation_date: 2025-11-24  (used only for logging now)
+    if "portfolio_file_name" not in cfg:
+        logging.error("Missing 'portfolio_file_name' in config")
+        sys.exit(1)
+
     portfolio_file_name = cfg["portfolio_file_name"]
     run_date = parse_config_date(cfg["valuation_date"])
 
@@ -154,9 +175,9 @@ def main():
 
     # --- Resolve stock/csv_out root (where csv_out lives) ---
     candidate_stock_dirs = [
-        src_dir / "stock",        # <project_root>/src/stock
-        project_root,             # <project_root> (your current case: project_root/csv_out/...)
-        project_root / "stock",   # <project_root>/stock
+        src_dir / "stock",       # <project_root>/src/stock
+        project_root,            # <project_root> (e.g. project_root/csv_out/...)
+        project_root / "stock",  # <project_root>/stock
     ]
 
     stock_dir = None
@@ -179,7 +200,7 @@ def main():
     logging.info("Resolved input dir: %s", input_dir)
     logging.info("Portfolio file path: %s", portfolio_file)
     logging.info("Resolved stock root (csv_out parent): %s", stock_dir)
-    logging.info("Using valuation_date from config for lookup: %s", run_date)
+    logging.info("Using valuation_date from config (for logging): %s", run_date)
 
     # Load portfolio
     df = pd.read_csv(portfolio_file)
@@ -189,18 +210,20 @@ def main():
     unique_tickers = sorted(df["ticker"].astype(str).unique())
     logging.info("Tickers in portfolio: %s", ", ".join(unique_tickers))
 
-    # Cache for already loaded bucket summaries
+    # Cache for already loaded bucket summaries (key: ticker)
     summary_cache: dict = {}
 
     def compute_fair_value(row):
         """
         Compute fair_value for a single portfolio row using
-        strike bucket summary for (run_date, ticker).
+        strike bucket summary for ticker.
+
+        fair_value is taken from 'max_tenor_for_strike' in the bucket where:
+          lower <= relative_strike < upper
         """
         ticker = str(row["ticker"])
-        key = (run_date, ticker)
 
-        summary_df = load_summary_for(key, stock_dir, summary_cache)
+        summary_df = load_summary_for(ticker, stock_dir, summary_cache)
         if summary_df is None:
             logging.warning(
                 "No summary data available for ticker=%s, setting fair_value=NaN",
@@ -217,19 +240,14 @@ def main():
             )
             return float("nan")
 
-        # Condition from your requirement:
-        #   lower_strike(summary) < relative_strike(portfolio)
-        #   AND upper_strike(summary) >= relative_strike(portfolio)
-        mask = (summary_df["lower_strike"] < rel) & (
-                summary_df["upper_strike"] >= rel
-        )
+        # Bucket condition over relative_strike: lower <= rel < upper
+        mask = (summary_df["lower"] <= rel) & (summary_df["upper"] > rel)
         match = summary_df[mask]
 
         if match.empty:
             logging.warning(
-                "No matching bucket for ticker=%s run_date=%s rel=%s (trade_id=%s)",
+                "No matching bucket for ticker=%s rel=%s (trade_id=%s)",
                 ticker,
-                run_date,
                 rel,
                 row.get("trade_id", "N/A"),
             )
@@ -242,7 +260,7 @@ def main():
                 rel,
             )
 
-        fair_value = match["max_relative_strike"].iloc[0]
+        fair_value = match["max_tenor_for_strike"].iloc[0]
         logging.debug(
             "Matched bucket for ticker=%s rel=%s -> fair_value=%s",
             ticker,

@@ -5,16 +5,25 @@
 This script:
   - loads main configuration from config/config.yaml
   - loads strike bucket configuration from config/strike_buckets.yaml
-  - iterates over all CSV files under outdir/<ticker>/
-  - reads 'relative_strike' and 'tenor' columns
-  - for each relative_strike bucket computes max(tenor)
-  - writes one summary CSV per ticker:
-        <outdir>/<ticker>/<ticker>_strike_buckets_summary.csv
+  - for each ticker:
+      - reads a single input file: outdir/<ticker>/<ticker>_options_all_expirations_filtered.csv
+      - uses 'relative_strike' and 'max_tenor_for_strike' columns
+      - for each strike bucket [lower, upper) (over relative_strike) computes
+        max(max_tenor_for_strike) among rows that fall into the bucket
+      - writes one summary CSV per ticker:
+        outdir/<ticker>/<ticker>_strike_buckets_summary.csv
 
-Output columns:
+Input file per ticker:
+  outdir/<ticker>/<ticker>_options_all_expirations_filtered.csv
+
+Required columns in input file:
+  - relative_strike
+  - max_tenor_for_strike
+
+Output columns (per bucket):
   - ticker
-  - lower_relative_strike
-  - upper_relative_strike
+  - lower
+  - upper
   - max_tenor_for_strike
 """
 
@@ -46,7 +55,7 @@ def load_strike_buckets(path: Path | None = None) -> List[Dict[str, Any]]:
     """
     Load strike bucket configuration from YAML.
 
-    Expected format:
+    Expected format in config/strike_buckets.yaml:
 
     strike_buckets:
       - lower: 0.0
@@ -55,7 +64,7 @@ def load_strike_buckets(path: Path | None = None) -> List[Dict[str, Any]]:
         upper: 35.0
       ...
 
-    Buckets are interpreted as ranges over *relative_strike* now.
+    Buckets are interpreted as ranges over *relative_strike*.
 
     :param path: optional path to strike_buckets.yaml
     :return: list of bucket dicts with 'lower' and 'upper'
@@ -87,73 +96,76 @@ def aggregate_for_ticker(
 ) -> None:
     """
     For a given ticker:
-      - read all CSV files under outdir/<ticker>/
-      - concatenate them
-      - compute max(tenor) per *relative_strike* bucket
-      - save summary to outdir/<ticker>/<ticker>_strike_buckets_summary.csv
+      - read single CSV file under outdir/<ticker>/:
+            <ticker>_options_all_expirations_filtered.csv
+      - compute max(max_tenor_for_strike) per *relative_strike* bucket
+      - save summary to:
+            outdir/<ticker>/<ticker>_strike_buckets_summary.csv
+
+    Expected columns in input CSV:
+      - relative_strike
+      - max_tenor_for_strike
     """
     ticker_dir = outdir / ticker
     if not ticker_dir.exists():
         logger.warning("No directory for ticker %s: %s", ticker, ticker_dir)
         return
 
-    csv_files = sorted(ticker_dir.glob("*.csv"))
-    if not csv_files:
-        logger.warning("No CSV files for ticker %s in %s", ticker, ticker_dir)
-        return
-
-    logger.info("Aggregating tenor per relative_strike bucket for ticker: %s", ticker)
-    logger.info("Found %d CSV files in %s", len(csv_files), ticker_dir)
-
-    frames = []
-    for csv_path in csv_files:
-        logger.info("  • Loading %s", csv_path.name)
-        df = pd.read_csv(csv_path)
-
-        # We need relative_strike and tenor columns
-        if "relative_strike" not in df.columns or "tenor" not in df.columns:
-            logger.warning(
-                "    Skipped (missing 'relative_strike' or 'tenor'): %s",
-                csv_path.name,
-            )
-            continue
-
-        # Ensure relative_strike and tenor are numeric
-        df["relative_strike"] = pd.to_numeric(df["relative_strike"], errors="coerce")
-        df["tenor"] = pd.to_numeric(df["tenor"], errors="coerce")
-
-        frames.append(df[["relative_strike", "tenor"]])
-
-    if not frames:
+    input_file = ticker_dir / f"{ticker}_options_all_expirations_filtered.csv"
+    if not input_file.exists():
         logger.warning(
-            "No suitable data (relative_strike + tenor) for ticker %s", ticker
+            "Input file for ticker %s not found: %s",
+            ticker,
+            input_file,
         )
         return
 
-    all_df = pd.concat(frames, ignore_index=True).dropna(
-        subset=["relative_strike", "tenor"]
+    logger.info(
+        "Aggregating max_tenor_for_strike per relative_strike bucket for ticker: %s",
+        ticker,
     )
-    if all_df.empty:
-        logger.warning("All rows are NaN after cleaning for ticker %s", ticker)
+    logger.info("Input file: %s", input_file)
+
+    df = pd.read_csv(input_file)
+
+    # We need relative_strike and max_tenor_for_strike columns
+    if "relative_strike" not in df.columns or "max_tenor_for_strike" not in df.columns:
+        logger.warning(
+            "Input file %s is missing 'relative_strike' or 'max_tenor_for_strike' columns. Skipping.",
+            input_file.name,
+        )
+        return
+
+    # Ensure numeric
+    df["relative_strike"] = pd.to_numeric(df["relative_strike"], errors="coerce")
+    df["max_tenor_for_strike"] = pd.to_numeric(
+        df["max_tenor_for_strike"], errors="coerce"
+    )
+
+    df = df.dropna(subset=["relative_strike", "max_tenor_for_strike"])
+    if df.empty:
+        logger.warning(
+            "All rows are NaN for (relative_strike, max_tenor_for_strike) in %s. Nothing to aggregate for ticker %s.",
+            input_file.name,
+            ticker,
+        )
         return
 
     logger.info(
         "Total rows to aggregate for ticker %s after cleaning: %d",
         ticker,
-        len(all_df),
+        len(df),
     )
 
-    # Prepare result table
+    # Prepare result table: one row per bucket
     rows = []
     for b in buckets:
         lower = float(b["lower"])
         upper = float(b["upper"])
 
         # Filter by relative_strike bucket: [lower, upper)
-        mask = (all_df["relative_strike"] >= lower) & (
-                all_df["relative_strike"] < upper
-        )
-        bucket_df = all_df[mask]
+        mask = (df["relative_strike"] >= lower) & (df["relative_strike"] < upper)
+        bucket_df = df[mask]
 
         if bucket_df.empty:
             max_tenor = None
@@ -164,7 +176,8 @@ def aggregate_for_ticker(
                 ticker,
             )
         else:
-            max_tenor = bucket_df["tenor"].max()
+            # key aggregation: maximum of max_tenor_for_strike within this bucket
+            max_tenor = bucket_df["max_tenor_for_strike"].max()
             logger.debug(
                 "Bucket [%.4f, %.4f): max_tenor_for_strike=%.4f for ticker %s",
                 lower,
@@ -176,15 +189,15 @@ def aggregate_for_ticker(
         rows.append(
             {
                 "ticker": ticker,
-                "lower_relative_strike": lower,
-                "upper_relative_strike": upper,
+                "lower": lower,
+                "upper": upper,
                 "max_tenor_for_strike": max_tenor,
             }
         )
 
     result_df = pd.DataFrame(rows)
 
-    # File name still includes the ticker
+    # Summary file: outdir/<ticker>/<ticker>_strike_buckets_summary.csv
     out_path = ticker_dir / f"{ticker}_strike_buckets_summary.csv"
     result_df.to_csv(out_path, index=False)
     logger.info("✅ Saved summary for %s: %s", ticker, out_path)
