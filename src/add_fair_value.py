@@ -33,36 +33,48 @@ def parse_relative_strike(value):
     return float(value)
 
 
-def load_summary_for(ticker: str, base_stock_dir: Path, cache: dict):
+def load_summary_for(key, base_stock_dir: Path, cache: dict):
     """
-    Load and cache bucket summary DataFrame for given ticker.
+    Load and cache bucket summary DataFrame for given (run_date, ticker).
     This avoids reading the same CSV multiple times.
 
+    key: (run_date: date, ticker: str)
+
     Expected file path:
-      <base_stock_dir>/csv_out/<TICKER>/<TICKER>_strike_buckets_summary.csv
+      <base_stock_dir>/csv_out/YYYY/MM/DD/enriched/<TICKER>/<TICKER>_strike_buckets_summary.csv
 
     Expected columns in summary CSV:
       - lower
       - upper
       - max_tenor_for_strike
     """
-    if ticker in cache:
-        return cache[ticker]
+    if key in cache:
+        return cache[key]
+
+    run_date, ticker = key
+    year = run_date.year
+    month = run_date.month
+    day = run_date.day
 
     summary_path = (
             base_stock_dir
             / "csv_out"
+            / f"{year:04d}"
+            / f"{month:02d}"
+            / f"{day:02d}"
+            / "enriched"
             / ticker
             / f"{ticker}_strike_buckets_summary.csv"
     )
 
     if not summary_path.exists():
         logging.warning(
-            "Summary file not found for ticker=%s at path=%s",
+            "Summary file not found for ticker=%s date=%s at path=%s",
             ticker,
+            run_date,
             summary_path,
         )
-        cache[ticker] = None
+        cache[key] = None
         return None
 
     logging.info("Loading summary file for ticker=%s from %s", ticker, summary_path)
@@ -83,7 +95,7 @@ def load_summary_for(ticker: str, base_stock_dir: Path, cache: dict):
             ticker,
             ", ".join(sorted(missing)),
         )
-        cache[ticker] = None
+        cache[key] = None
         return None
 
     # Ensure numeric types
@@ -93,8 +105,8 @@ def load_summary_for(ticker: str, base_stock_dir: Path, cache: dict):
         df_summary["max_tenor_for_strike"], errors="coerce"
     )
 
-    cache[ticker] = df_summary
-    return cache[ticker]
+    cache[key] = df_summary
+    return cache[key]
 
 
 def parse_config_date(value) -> date:
@@ -128,6 +140,32 @@ def parse_config_date(value) -> date:
     sys.exit(1)
 
 
+def resolve_run_date(cfg) -> date:
+    """
+    Resolve valuation_date from config.
+    If missing or empty, use today's date.
+    """
+    raw = cfg.get("valuation_date")
+
+    if raw is None:
+        today = date.today()
+        logging.info(
+            "valuation_date is not set in config, using today's date: %s", today
+        )
+        return today
+
+    if isinstance(raw, str) and raw.strip() == "":
+        today = date.today()
+        logging.info(
+            "valuation_date is empty string in config, using today's date: %s",
+            today,
+        )
+        return today
+
+    # Otherwise, parse with standard logic
+    return parse_config_date(raw)
+
+
 def main():
     # __file__ is in: <project_root>/src/add_fair_value_from_buckets.py
     src_dir = Path(__file__).resolve().parent
@@ -139,15 +177,13 @@ def main():
     logging.info("Loading configuration from explicit path: %s", config_path)
     cfg = load_config(config_path)
 
-    # Expect these keys in parameters.yaml:
-    #   portfolio_file_name: equity_vanilla_portfolio.csv
-    #   valuation_date: 2025-11-24  (used only for logging now)
+    # Expect portfolio_file_name in parameters.yaml
     if "portfolio_file_name" not in cfg:
         logging.error("Missing 'portfolio_file_name' in config")
         sys.exit(1)
 
     portfolio_file_name = cfg["portfolio_file_name"]
-    run_date = parse_config_date(cfg["valuation_date"])
+    run_date = resolve_run_date(cfg)
 
     # --- Resolve input dir (where portfolio CSV lives) ---
     candidate_input_dirs = [
@@ -200,7 +236,7 @@ def main():
     logging.info("Resolved input dir: %s", input_dir)
     logging.info("Portfolio file path: %s", portfolio_file)
     logging.info("Resolved stock root (csv_out parent): %s", stock_dir)
-    logging.info("Using valuation_date from config (for logging): %s", run_date)
+    logging.info("Using valuation_date for lookup: %s", run_date)
 
     # Load portfolio
     df = pd.read_csv(portfolio_file)
@@ -210,20 +246,21 @@ def main():
     unique_tickers = sorted(df["ticker"].astype(str).unique())
     logging.info("Tickers in portfolio: %s", ", ".join(unique_tickers))
 
-    # Cache for already loaded bucket summaries (key: ticker)
+    # Cache for already loaded bucket summaries (key: (run_date, ticker))
     summary_cache: dict = {}
 
     def compute_fair_value(row):
         """
         Compute fair_value for a single portfolio row using
-        strike bucket summary for ticker.
+        strike bucket summary for (run_date, ticker).
 
         fair_value is taken from 'max_tenor_for_strike' in the bucket where:
           lower <= relative_strike < upper
         """
         ticker = str(row["ticker"])
+        key = (run_date, ticker)
 
-        summary_df = load_summary_for(ticker, stock_dir, summary_cache)
+        summary_df = load_summary_for(key, stock_dir, summary_cache)
         if summary_df is None:
             logging.warning(
                 "No summary data available for ticker=%s, setting fair_value=NaN",
@@ -246,8 +283,9 @@ def main():
 
         if match.empty:
             logging.warning(
-                "No matching bucket for ticker=%s rel=%s (trade_id=%s)",
+                "No matching bucket for ticker=%s date=%s rel=%s (trade_id=%s)",
                 ticker,
+                run_date,
                 rel,
                 row.get("trade_id", "N/A"),
             )

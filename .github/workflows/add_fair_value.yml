@@ -1,0 +1,69 @@
+name: Compute fair value for equity portfolio
+
+on:
+  # Trigger automatically after the "Enrich options after US close" workflow completes
+  workflow_run:
+    workflows: ["Enrich options after US close"]
+    types: [completed]
+
+  # Allow manual trigger as well
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  add-fair-value:
+    runs-on: ubuntu-latest
+    # If triggered by workflow_run, run only when the previous workflow succeeded
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        if: hashFiles('requirements.txt') != ''
+        run: pip install -r requirements.txt
+
+      - name: Run add_fair_value_from_buckets
+        # The script:
+        # - reads config/parameters.yaml
+        # - uses valuation_date (or today's date if empty/missing)
+        # - reads strike bucket summaries from stock/csv_out/YYYY/MM/DD/enriched/<TICKER>/...
+        run: python src/add_fair_value_from_buckets.py
+
+      - name: Commit fair value results
+        if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          echo "Committing fair value results (if there are changes)..."
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Stage all changes including generated *_with_fair_value.csv
+          git add -A || echo "Nothing to add"
+
+          # If there are no staged changes, do nothing
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          DATE_UTC=$(date -u '+%Y-%m-%d')
+          git commit -m "Add fair value for portfolio on ${DATE_UTC}"
+
+          echo "Pushing using default GITHUB_TOKEN..."
+          git push

@@ -33,4 +33,4 @@ spot_price_overrides:
 
 
 portfolio_file_name: equity_vanilla_portfolio.csv
-valuation_date: 2025-11-24
+valuation_date:
