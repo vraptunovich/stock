@@ -150,7 +150,7 @@ def main():
     move_csv_out_to_enriched(repo_root, run_date)
 
     # 7) Add fair value
-    run_cmd([sys.executable, str(src_dir / "add_fair_value.py")], cwd=repo_root)
+    run_cmd([sys.executable, str(src_dir / "add_fair_value_from_buckets.py")], cwd=repo_root)
 
     logging.info("✅ Pipeline finished successfully")
 
