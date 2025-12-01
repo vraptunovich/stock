@@ -246,6 +246,15 @@ def main():
     unique_tickers = sorted(df["ticker"].astype(str).unique())
     logging.info("Tickers in portfolio: %s", ", ".join(unique_tickers))
 
+    # --- Calculate longest_tener_date: (expiry - valuation_date) in days ---
+    logging.info("Calculating longest_tener_date (expiry - valuation_date in days)...")
+
+    # expiry is in 'YYYY-MM-DD' format in the CSV, convert to datetime
+    expiry_dt = pd.to_datetime(df["expiry"], errors="coerce")
+
+    # difference in days between expiry and valuation_date (run_date)
+    df["longest_tener_date"] = (expiry_dt - pd.Timestamp(run_date)).dt.days
+
     # Cache for already loaded bucket summaries (key: (run_date, ticker))
     summary_cache: dict = {}
 
@@ -254,8 +263,11 @@ def main():
         Compute fair_value for a single portfolio row using
         strike bucket summary for (run_date, ticker).
 
-        fair_value is taken from 'max_tenor_for_strike' in the bucket where:
-          lower <= relative_strike < upper
+        New logic:
+          - Find bucket where lower <= relative_strike < upper
+          - Compare longest_tener_date (days) with max_tenor_for_strike
+          - If longest_tener_date <= max_tenor_for_strike -> fair_value = 2
+            else -> fair_value = 3
         """
         ticker = str(row["ticker"])
         key = (run_date, ticker)
@@ -272,6 +284,15 @@ def main():
         if rel is None:
             logging.warning(
                 "relative_strike is NaN for trade_id=%s, ticker=%s, setting fair_value=NaN",
+                row.get("trade_id", "N/A"),
+                ticker,
+            )
+            return float("nan")
+
+        tenor_days = row.get("longest_tener_date")
+        if pd.isna(tenor_days):
+            logging.warning(
+                "longest_tener_date is NaN for trade_id=%s, ticker=%s, setting fair_value=NaN",
                 row.get("trade_id", "N/A"),
                 ticker,
             )
@@ -298,11 +319,29 @@ def main():
                 rel,
             )
 
-        fair_value = match["max_tenor_for_strike"].iloc[0]
+        max_tenor_for_strike = match["max_tenor_for_strike"].iloc[0]
+
+        if pd.isna(max_tenor_for_strike):
+            logging.warning(
+                "max_tenor_for_strike is NaN for ticker=%s rel=%s (trade_id=%s), setting fair_value=NaN",
+                ticker,
+                rel,
+                row.get("trade_id", "N/A"),
+            )
+            return float("nan")
+
+        # New fair_value logic
+        if tenor_days <= max_tenor_for_strike:
+            fair_value = 2
+        else:
+            fair_value = 3
+
         logging.debug(
-            "Matched bucket for ticker=%s rel=%s -> fair_value=%s",
+            "Matched bucket for ticker=%s rel=%s tenor_days=%s max_tenor=%s -> fair_value=%s",
             ticker,
             rel,
+            tenor_days,
+            max_tenor_for_strike,
             fair_value,
         )
         return fair_value
