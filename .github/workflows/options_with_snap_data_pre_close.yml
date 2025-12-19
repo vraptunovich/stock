@@ -1,0 +1,118 @@
+name: Options snapshot before US close
+
+on:
+  schedule:
+    # 20:30 UTC ≈ 30 minutes before US market close during EST (Mon–Fri)
+    - cron: '30 20 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  preclose-snapshot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        if: hashFiles('requirements.txt') != ''
+        run: pip install -r requirements.txt
+
+      - name: Clean today's enriched directory before snapshot
+        shell: bash
+        run: |
+          set -e
+
+          DATE_PATH=$(date -u '+%Y/%m/%d')
+          ENRICHED_DIR="csv_out/${DATE_PATH}/enriched"
+
+          echo "Checking for today's enriched directory: ${ENRICHED_DIR}"
+
+          if [ -d "${ENRICHED_DIR}" ]; then
+            echo "Removing existing enriched directory: ${ENRICHED_DIR}"
+            rm -rf "${ENRICHED_DIR}"
+          else
+            echo "No enriched directory for today. Nothing to clean."
+          fi
+
+      - name: Run options script (pre-close snapshot)
+        run: python src/all_options_to_csv.py
+
+      - name: Copy snapshot into dated directory
+        shell: bash
+        run: |
+          set -e
+
+          # Use current UTC date for directory structure: csv_out/YYYY/MM/DD/
+          DATE_PATH=$(date -u '+%Y/%m/%d')
+          TARGET_DIR="csv_out/${DATE_PATH}"
+
+          echo "Using snapshot directory: ${TARGET_DIR}"
+
+          mkdir -p "${TARGET_DIR}"
+
+          if [ -d "csv_out" ]; then
+            echo "Copying working csv_out contents to ${TARGET_DIR}"
+            # Iterate over top-level entries in csv_out
+            for entry in csv_out/*; do
+              [ -e "$entry" ] || continue
+              name=$(basename "$entry")
+
+              # Skip year directories (4 digits), they are snapshot roots
+              if [[ "$name" =~ ^[0-9]{4}$ ]]; then
+                echo "Skipping snapshot year directory: $entry"
+                continue
+              fi
+
+              echo "Copying $entry -> ${TARGET_DIR}/"
+              cp -R "$entry" "${TARGET_DIR}/"
+            done
+          else
+            echo "Directory csv_out does not exist, nothing to snapshot."
+          fi
+
+      - name: Commit snapshot
+        if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          DATE_PATH=$(date -u '+%Y/%m/%d')
+          TARGET_DIR="csv_out/${DATE_PATH}"
+
+          echo "Committing snapshot from: ${TARGET_DIR}"
+
+          if [ ! -d "${TARGET_DIR}" ]; then
+            echo "Snapshot directory ${TARGET_DIR} does not exist. Nothing to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Force-add snapshot directory even if csv_out is in .gitignore
+          git add -f "${TARGET_DIR}" || echo "Nothing to add from ${TARGET_DIR}"
+
+          # Commit only if there are staged changes
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          DATE_UTC=$(date -u '+%Y-%m-%d')
+          git commit -m "Snapshot options data for ${DATE_UTC}"
+
+          echo "Pushing using default GITHUB_TOKEN..."
+          git push
