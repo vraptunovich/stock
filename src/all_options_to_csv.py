@@ -38,10 +38,10 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 
-
 # ---------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------
+
 
 def normalize_chain(df: pd.DataFrame, opt_type: str, expiration: str) -> pd.DataFrame:
     """
@@ -92,12 +92,7 @@ def load_for_expiration(ticker: str, expiration: str) -> pd.DataFrame:
             inplace=True,
             ignore_index=True,
         )
-        logger.debug(
-            "Loaded %d rows for %s @ %s",
-            len(df),
-            ticker,
-            expiration,
-        )
+        logger.debug("Loaded %d rows for %s @ %s", len(df), ticker, expiration)
     else:
         logger.debug("No data for %s @ %s", ticker, expiration)
 
@@ -117,9 +112,7 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     before = len(df)
 
     oi_ok = df["openInterest"].fillna(0) > 0
-    ltd_ok = df["lastTradeDateEDT"].notna() & (
-            df["lastTradeDateEDT"].astype(str).str.len() > 0
-    )
+    ltd_ok = df["lastTradeDateEDT"].notna() & (df["lastTradeDateEDT"].astype(str).str.len() > 0)
 
     filtered = df[oi_ok & ltd_ok].reset_index(drop=True)
     after = len(filtered)
@@ -148,7 +141,7 @@ def pick_expirations(
 
     # Exact dates provided
     if exp_dates:
-        target = set(parse_date(d).strftime("%Y-%m-%d") for d in exp_dates)
+        target = {parse_date(d).strftime("%Y-%m-%d") for d in exp_dates}
         picked = [d for d in all_exps if d in target]
         logger.info(
             "Picked expirations by explicit dates (%d/%d): %s",
@@ -185,27 +178,15 @@ def pick_expirations(
     return list(all_exps)
 
 
-def enrich_with_tenor_and_snap_date(df: pd.DataFrame, snap_dt: datetime) -> pd.DataFrame:
+def enrich_with_snap_date(df: pd.DataFrame, snap_dt: datetime) -> pd.DataFrame:
     """
-    Add tenor_days and snap_date columns based on snap_dt.
-    tenor_days = (expiration - snap_date) in days.
+    Add snap_date column based on snap_dt.
     """
     if df.empty:
-        logger.warning("enrich_with_tenor_and_snap_date: empty dataframe, nothing to enrich")
+        logger.warning("enrich_with_snap_date: empty dataframe, nothing to enrich")
         return df
 
-    # Convert expiration column to timezone-aware UTC timestamps
-    exp_ts = pd.to_datetime(df["expiration"], errors="coerce", utc=True)
-
-    # Convert snap_dt to timezone-aware UTC timestamp
-    if snap_dt.tzinfo is None:
-        snap_ts = pd.to_datetime(snap_dt).tz_localize("UTC")
-    else:
-        snap_ts = pd.to_datetime(snap_dt).tz_convert("UTC")
-
-    df["tenor_days"] = (exp_ts - snap_ts).dt.days
     df["snap_date"] = snap_dt.date().isoformat()
-
     return df
 
 
@@ -213,23 +194,26 @@ def enrich_with_tenor_and_snap_date(df: pd.DataFrame, snap_dt: datetime) -> pd.D
 # Main work
 # ---------------------------------------------------------
 
-def run(config: dict):
+
+def run(config: dict) -> None:
     """
     Main execution function:
       - loads configuration
       - resolves snap_date (from config or current UTC)
       - fetches option chains for all tickers
       - applies filters
-      - enriches with tenor_days and snap_date
+      - adds snap_date column
       - saves results into a single CSV file inside the configured output directory.
         All tickers are combined into one file; a 'ticker' column is added.
-    """
 
+    Output path format:
+      <outdir>/<YYYY>/<MM>/<DD>/<filename>.csv
+    """
     tickers = config.get("tickers", ["AAPL"])
     exp_start = config.get("exp_start") or ""
     exp_end = config.get("exp_end") or ""
     exp_dates = config.get("exp_dates") or []
-    outdir_name = config.get("outdir", "csv_out")
+    outdir_name = config.get("outdir", "csv_output")
     snap_date_str = config.get("snap_date")
 
     logger.info("Starting options download job")
@@ -248,10 +232,14 @@ def run(config: dict):
         snap_dt = parse_date(snap_date_str)
         logger.info("Using snap_date from config: %s", snap_dt.date().isoformat())
 
-    # Base output directory is resolved relative to the repository root
-    outdir = BASE_DIR / outdir_name
+    # Output directory: csv_output/YYYY/MM/DD (based on snap_dt)
+    year = snap_dt.strftime("%Y")
+    month = snap_dt.strftime("%m")
+    day = snap_dt.strftime("%d")
+
+    outdir = BASE_DIR / outdir_name / year / month / day
     ensure_dir(outdir)
-    logger.debug("Ensured base output directory exists: %s", outdir)
+    logger.info("Final output directory: %s", outdir)
 
     # Determine common output file name (same for all tickers)
     if exp_dates:
@@ -323,8 +311,8 @@ def run(config: dict):
 
     df_final = pd.concat(all_results, ignore_index=True)
 
-    # Enrich with tenor_days and snap_date using snap_dt
-    df_final = enrich_with_tenor_and_snap_date(df_final, snap_dt)
+    # Add snap_date column
+    df_final = enrich_with_snap_date(df_final, snap_dt)
 
     out_path = outdir / out_name
     df_final.to_csv(out_path, index=False)
