@@ -10,6 +10,7 @@ tickers:
   - PLTR
   - TSM
   - NFLX
+  - XOM
 
 # Optional expiration date range (inclusive).
 # Can be "YYYY-MM-DD", "DD-MM-YYYY", or empty string "" if not used.
@@ -32,5 +33,6 @@ spot_price_overrides:
   SPY: 520.10
 
 
-portfolio_file_name: equity_vanilla_portfolio.csv
+portfolio_file_name: equity_vanilla_portfolio_1.csv
 valuation_date:
+

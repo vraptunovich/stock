@@ -15,7 +15,7 @@ The pipeline runs both locally and via GitHub Actions, producing ready-to-use CS
 - Applies expiration filters:
     - exact dates (`exp_dates`)
     - date range (`exp_start → exp_end`)
-    - all expirations if filters are not provided
+    - all expirations for extracted date if filters are not provided
 - Normalizes columns into a consistent format
 - Saves data into per-ticker directories:
 
@@ -36,9 +36,9 @@ Adds:
 - snap_date (taken from parameters.yaml, or current UTC date if not set)
 - Overwrites the original CSV files.
 
-## 4. Add max_tenor
+## 3. Add max_tenor
 
-**`add_max_tenor_for_strike.py`** (or `add_max_tenor.py` depending on your local filename):
+**`add_max_tenor.py`** 
 
 Computes:
 
@@ -51,9 +51,22 @@ Equivalent to Excel:
 ```
 Adds max_tenor_for_strike per row and overwrites the CSV files.
 
+## 4. Add relative strike
+
+Computes:
+
+```text
+relative_strike = (current_strike/spot_price) * 100
+```
+Equivalent to Excel:
+```text
+=ABS(D2/spot_price) *100
+```
+Adds relative_strike per row and overwrites the CSV files.
+
 ## 5. Strike Bucket Aggregation
 
-**`strike_buckets_summary.py`** (or `aggregate_strike_buckets.py` depending on your local filename):
+**`aggregate_strike_buckets.py`** 
 
 - Reads bucket definitions from `config/strike_buckets.yaml`
 - Aggregates (e.g. `max(relative_strike)`) per bucket
