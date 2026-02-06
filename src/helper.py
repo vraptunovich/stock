@@ -21,18 +21,28 @@ def load_config(path: Optional[Union[str, Path]] = None) -> dict:
     """
     Load YAML configuration from the given path.
 
-    If path is not provided, config/parameters.yaml under the repository root is used.
+    Behavior:
+    - If path is None -> uses BASE_DIR / "config" / "parameters.yaml"
+    - If path is absolute -> uses it as-is
+    - If path is relative -> resolves it relative to BASE_DIR (repo root)
+
+    This makes config loading independent of the current working directory (cwd).
     """
     if path is None:
         cfg_path = BASE_DIR / "config" / "parameters.yaml"
         logger.info("Loading configuration from default path: %s", cfg_path)
     else:
-        cfg_path = Path(path)
+        p = Path(path)
+        cfg_path = p if p.is_absolute() else (BASE_DIR / p)
         logger.info("Loading configuration from explicit path: %s", cfg_path)
 
     if not cfg_path.exists():
         logger.error("Config file not found: %s", cfg_path)
         raise FileNotFoundError(f"Config file not found: {cfg_path}")
+
+    if not cfg_path.is_file():
+        logger.error("Config path is not a file: %s", cfg_path)
+        raise FileNotFoundError(f"Config path is not a file: {cfg_path}")
 
     try:
         with cfg_path.open("r", encoding="utf-8") as f:

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -38,7 +40,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 
-
 # ---------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------
@@ -62,7 +63,7 @@ def normalize_chain(df: pd.DataFrame, opt_type: str, expiration: str) -> pd.Data
 
     out["lastTradeDateEDT"] = out["lastTradeDate"].apply(to_edt)
 
-    # Reorder columns
+    # Reorder columns (keep only known columns)
     out = out[[c for c in YAHOO_COL_ORDER if c in out.columns]]
     return out
 
@@ -85,19 +86,14 @@ def load_for_expiration(ticker: str, expiration: str) -> pd.DataFrame:
         normalize_chain(chain.puts, "put", expiration),
     ]
 
-    df = pd.concat([f for f in frames if not f.empty], ignore_index=True)
+    df = pd.concat(frames, ignore_index=True)
     if not df.empty:
         df.sort_values(
             by=["expiration", "type", "strike"],
             inplace=True,
             ignore_index=True,
         )
-        logger.debug(
-            "Loaded %d rows for %s @ %s",
-            len(df),
-            ticker,
-            expiration,
-        )
+        logger.debug("Loaded %d rows for %s @ %s", len(df), ticker, expiration)
     else:
         logger.debug("No data for %s @ %s", ticker, expiration)
 
@@ -116,10 +112,9 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
 
     before = len(df)
 
+    # Some tickers/expirations may have NA in openInterest or lastTradeDate
     oi_ok = df["openInterest"].fillna(0) > 0
-    ltd_ok = df["lastTradeDateEDT"].notna() & (
-            df["lastTradeDateEDT"].astype(str).str.len() > 0
-    )
+    ltd_ok = df["lastTradeDateEDT"].notna() & (df["lastTradeDateEDT"].astype(str).str.len() > 0)
 
     filtered = df[oi_ok & ltd_ok].reset_index(drop=True)
     after = len(filtered)

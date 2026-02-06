@@ -1,0 +1,84 @@
+graphql:
+  url: https://api.developer.deutsche-boerse.com/eurex-prod-graphql/
+  apikey: 2cde4028-d350-489d-a91d-2fa989dc2fff
+
+products:
+  - NESN
+  - NOVN
+  - ROG
+
+queries:
+  flexible_contracts: |
+    query FlexibleContractsByProductAndDate($product: String!) {
+      FlexibleContracts(filter: { Product: { eq: $product } }) {
+        date
+        data {
+          ProductID
+          Product
+          ContractID
+          ISIN
+          Contract
+          CFI
+          CallPut
+          ExerciseStyle
+          Strike
+          VersionNr
+          SettlementType
+          ContractSize
+          CreationDate
+          ExpirationDate
+          FinalSettlementDate
+          ContractDate
+          CapitalAdjusmentDate
+          PreviousContract
+          PreviousContractSize
+          PreviousProduct
+          PreviousStrike
+          CashFraction
+          OpenInterestAvailable
+          SettlementDate
+          SettlementPrice
+          ConversionDate
+          ConvertedToContractID
+        }
+      }
+    }
+
+  contracts: |
+    query AllContracts($product: String!) {
+      Contracts(filter: { Product: { eq: $product } }) {
+        date
+        data {
+          ProductID
+          Product
+          ProductLine
+          InstrumentID
+          ContractID
+          ISIN
+          MasterContract
+          Contract
+          PrimaryContract
+          ContractCycle
+          CallPut
+          Strike
+          OriginalStrike
+          SettlementType
+          ExerciseStyle
+          VersionNr
+          GenerationNr
+          ContractSize
+          DeliverySize
+          CashFraction
+          CFI
+          FirstTradingDate
+          ContractDate
+          ContractDateType
+          LastTradingDate
+          ExpirationDate
+          FinalSettlementDate
+          PreviousDaySettlementPrice
+          OptionsDelta
+          UnderlyingContract
+        }
+      }
+    }

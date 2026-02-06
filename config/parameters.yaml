@@ -11,6 +11,9 @@ tickers:
   - TSM
   - NFLX
   - XOM
+  - BCS
+  - BP
+  - NESN.SW
 
 # Optional expiration date range (inclusive).
 # Can be "YYYY-MM-DD", "DD-MM-YYYY", or empty string "" if not used.
@@ -35,4 +38,7 @@ spot_price_overrides:
 
 portfolio_file_name: equity_vanilla_portfolio_1.csv
 valuation_date:
+
+basket_portfolio_input: input/basket_portfolio
+basket_portfolio_output: output/basket_portfolio_with_tenor
 
